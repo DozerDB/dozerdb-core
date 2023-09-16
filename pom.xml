@@ -13,7 +13,7 @@
 
     <groupId>org.dozerdb</groupId>
     <artifactId>dozerdb-core-parent</artifactId>
-    <version>4.4.25</version>
+    <version>4.4.25-1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>dozerdb-core-parent</name>
     <description>DozerDB Plugin Core for enhancing Neo4j Community Edition</description>
