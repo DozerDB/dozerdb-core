@@ -17,7 +17,16 @@
     <packaging>pom</packaging>
     <name>dozerdb-core-parent</name>
     <description>DozerDB Plugin Core for Neo4j</description>
-
+    <properties>
+         <!-- We define the dozerdb-core.version here because we want to keep the main project version the same as the parent neo4j project version. -->
+        <dozerdb-core.version>5.12.0-1.0.0-SNAPSHOT</dozerdb-core.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
+        <maven.build.timestamp.format>yyMMddHHmmssSSS</maven.build.timestamp.format>
+    </properties>
     <organization>
         <name>DozerDB Project</name>
         <url>https://dozerdb.org</url>
@@ -48,14 +57,7 @@
         <url>https://github.com/dozerdb/dozerdb-core/issues</url>
     </issueManagement>
 
-    <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <java.version>17</java.version>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
-        <maven.compiler.release>17</maven.compiler.release>
-        <maven.build.timestamp.format>yyMMddHHmmssSSS</maven.build.timestamp.format>
-    </properties>
+    
 
 
 
@@ -97,8 +99,15 @@
                     <skip>true</skip>
                 </configuration>
             </plugin>
-        
-            </plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <finalName>dozerdb-core-${dozerdb-core.version}</finalName>
+                </configuration>
+            </plugin>
+        </plugins>
 
         </pluginManagement>
     </build>
