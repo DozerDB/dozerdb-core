@@ -7,16 +7,16 @@
     <parent>
         <groupId>org.neo4j</groupId>
         <artifactId>parent</artifactId>
-        <version>4.4.25</version>
+        <version>5.12.0</version>
     </parent>
 
 
     <groupId>org.dozerdb</groupId>
     <artifactId>dozerdb-core-parent</artifactId>
-    <version>4.4.25</version>
+    <version>5.12.0</version>
     <packaging>pom</packaging>
     <name>dozerdb-core-parent</name>
-    <description>DozerDB Plugin Core for enhancing Neo4j Community Edition</description>
+    <description>DozerDB Plugin Core for Neo4j</description>
 
     <organization>
         <name>DozerDB Project</name>
@@ -50,8 +50,10 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <maven.build.timestamp.format>yyMMddHHmmssSSS</maven.build.timestamp.format>
     </properties>
 
@@ -63,40 +65,13 @@
 
     <build>
         <pluginManagement>
+
+        
+
             <plugins>
-                <!-- Spotless is used for checkstyle and automatic code formatting -->
-                <plugin>
-                    <groupId>com.diffplug.spotless</groupId>
-                    <artifactId>spotless-maven-plugin</artifactId>
-                    <version>2.36.0</version>
-                    <executions>
-                        <execution>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                    <configuration>
-                        <upToDateChecking>
-                            <enabled>true</enabled>
-                        </upToDateChecking>
-                        <java>
-                            <palantirJavaFormat />
-                        </java>
-                        <scala>
-                            <scalafmt>
-                                <file>build-resources/scalafmt/scalafmt.conf</file>
-                            </scalafmt>
-                        </scala>
-                    </configuration>
-                    <dependencies>
-                        <dependency>
-                            <groupId>org.neo4j.build</groupId>
-                            <artifactId>build-resources</artifactId>
-                            <version>${project.version}</version>
-                        </dependency>
-                    </dependencies>
-                </plugin>
+
+
+
                 <!-- We want to disable the licensing-maven-plugin which is inherited from the parent. -->
                 <plugin>
                     <groupId>org.neo4j.build.plugins</groupId>
@@ -107,29 +82,22 @@
                 </plugin>
 
 
-                <!-- Disable the maven-enforcer-plugin which tries to enforce the use of all org.neo4j packages -->
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-enforcer-plugin</artifactId>
-                    <configuration>
-                        <skip>true</skip>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>com.mycila</groupId>
-                    <artifactId>license-maven-plugin</artifactId>
-                    <configuration>
-                        <skip>true</skip>
-                    </configuration>
-                </plugin>
-
-                <!-- Disable the maven-checkstyle-plugin -->
-                <plugin>
-                    <artifactId>maven-checkstyle-plugin</artifactId>
-                    <configuration>
-                        <skip>true</skip>
-                    </configuration>
-                </plugin>
+             <!-- Disable the maven-enforcer-plugin which tries to enforce the use of all org.neo4j packages -->
+             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+             <plugin>
+                <groupId>com.mycila</groupId>
+                 <artifactId>license-maven-plugin</artifactId>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        
             </plugins>
 
         </pluginManagement>

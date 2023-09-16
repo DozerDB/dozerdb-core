@@ -1,5 +1,5 @@
 /*
- * Copyright (c) DozerDB.org
+ * Copyright (c) DozerDB
  * ALL RIGHTS RESERVED.
  *
  * DozerDb is free software: you can redistribute it and/or modify

@@ -17,10 +17,12 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 /*
- * Modifications Copyright (c) DozerDB
- * https://dozerdb.org
+ *  Modifications Copyright (c) DozerDB
+ *  https://dozerdb.org
  */
+
 package org.neo4j.cypher.internal
 
 import org.neo4j.common.DependencyResolver
@@ -32,7 +34,6 @@ import org.neo4j.cypher.internal.AdministrationCommandRuntime.getNameFields
 import org.neo4j.cypher.internal.AdministrationCommandRuntime.makeRenameExecutionPlan
 import org.neo4j.cypher.internal.AdministrationCommandRuntime.runtimeStringValue
 import org.neo4j.cypher.internal.administration.AlterUserExecutionPlanner
-import org.neo4j.cypher.internal.administration.CommunityExtendedDatabaseInfoMapper
 import org.neo4j.cypher.internal.administration.CreateUserExecutionPlanner
 import org.neo4j.cypher.internal.administration.DoNothingExecutionPlanner
 import org.neo4j.cypher.internal.administration.DropUserExecutionPlanner
@@ -42,23 +43,17 @@ import org.neo4j.cypher.internal.administration.ShowDatabasesExecutionPlanner
 import org.neo4j.cypher.internal.administration.ShowUsersExecutionPlanner
 import org.neo4j.cypher.internal.administration.SystemProcedureCallPlanner
 import org.neo4j.cypher.internal.ast.AdministrationAction
-import org.neo4j.cypher.internal.ast.Clause
 import org.neo4j.cypher.internal.ast.DbmsAction
-import org.neo4j.cypher.internal.ast.Return
-import org.neo4j.cypher.internal.ast.SingleQuery
 import org.neo4j.cypher.internal.ast.StartDatabaseAction
-import org.neo4j.cypher.internal.ast.Statement
 import org.neo4j.cypher.internal.ast.StopDatabaseAction
-import org.neo4j.cypher.internal.ast.TerminateTransactionsClause
-import org.neo4j.cypher.internal.ast.Yield
+import org.neo4j.cypher.internal.ast.UnassignableAction
 import org.neo4j.cypher.internal.expressions.Parameter
 import org.neo4j.cypher.internal.logical.plans.AllowedNonAdministrationCommands
 import org.neo4j.cypher.internal.logical.plans.AlterUser
 import org.neo4j.cypher.internal.logical.plans.AssertAllowedDatabaseAction
 import org.neo4j.cypher.internal.logical.plans.AssertAllowedDbmsActions
 import org.neo4j.cypher.internal.logical.plans.AssertAllowedDbmsActionsOrSelf
-import org.neo4j.cypher.internal.logical.plans.AssertAllowedOneOfDbmsActions
-import org.neo4j.cypher.internal.logical.plans.AssertNotBlockedDatabaseManagement
+import org.neo4j.cypher.internal.logical.plans.AssertManagementActionNotBlocked
 import org.neo4j.cypher.internal.logical.plans.AssertNotCurrentUser
 import org.neo4j.cypher.internal.logical.plans.CreateDatabase
 import org.neo4j.cypher.internal.logical.plans.CreateUser
@@ -67,6 +62,7 @@ import org.neo4j.cypher.internal.logical.plans.DoNothingIfDatabaseNotExists
 import org.neo4j.cypher.internal.logical.plans.DoNothingIfExists
 import org.neo4j.cypher.internal.logical.plans.DoNothingIfNotExists
 import org.neo4j.cypher.internal.logical.plans.DropUser
+import org.neo4j.cypher.internal.logical.plans.EnsureNameIsNotAmbiguous
 import org.neo4j.cypher.internal.logical.plans.EnsureNodeExists
 import org.neo4j.cypher.internal.logical.plans.EnsureValidNumberOfDatabases
 import org.neo4j.cypher.internal.logical.plans.LogSystemCommand
@@ -81,13 +77,11 @@ import org.neo4j.cypher.internal.logical.plans.ShowUsers
 import org.neo4j.cypher.internal.logical.plans.SystemProcedureCall
 import org.neo4j.cypher.internal.procs.ActionMapper
 import org.neo4j.cypher.internal.procs.AuthorizationAndPredicateExecutionPlan
-import org.neo4j.cypher.internal.procs.AuthorizationOrPredicateExecutionPlan
+import org.neo4j.cypher.internal.procs.Continue
 import org.neo4j.cypher.internal.procs.PredicateExecutionPlan
 import org.neo4j.cypher.internal.procs.QueryHandler
 import org.neo4j.cypher.internal.procs.SystemCommandExecutionPlan
 import org.neo4j.cypher.internal.procs.UpdatingSystemCommandExecutionPlan
-import org.neo4j.cypher.internal.util.Rewriter
-import org.neo4j.cypher.internal.util.bottomUp
 import org.neo4j.cypher.rendering.QueryRenderer
 import org.neo4j.dbms.api.DatabaseLimitReachedException
 import org.neo4j.exceptions.CantCompileQueryException
@@ -100,8 +94,8 @@ import org.neo4j.internal.kernel.api.security.PermissionState
 import org.neo4j.internal.kernel.api.security.SecurityAuthorizationHandler
 import org.neo4j.internal.kernel.api.security.SecurityContext
 import org.neo4j.internal.kernel.api.security.Segment
-import org.neo4j.kernel.database.DefaultDatabaseResolver
 import org.neo4j.kernel.database.NormalizedDatabaseName
+import org.neo4j.kernel.impl.api.security.RestrictedAccessMode
 import org.neo4j.values.storable.LongValue
 import org.neo4j.values.storable.TextValue
 import org.neo4j.values.storable.Value
@@ -111,10 +105,8 @@ import org.neo4j.values.virtual.VirtualValues
 
 import java.util.UUID
 
-import scala.annotation.tailrec
-
 /**
- * This runtime takes on queries that work on the system database, such as multidatabase and security administration commands.
+ * This runtime takes on queries that work on the system database, such as multi-database and security administration commands.
  * The planning requirements for these are much simpler than normal Cypher commands, and as such the runtime stack is also different.
  */
 case class DozerDbAdministrationCommandRuntime(
@@ -133,7 +125,7 @@ case class DozerDbAdministrationCommandRuntime(
   private lazy val securityAuthorizationHandler =
     new SecurityAuthorizationHandler(resolver.resolveDependency(classOf[AbstractSecurityLog]))
 
-  private lazy val defaultDatabaseResolver = resolver.resolveDependency(classOf[DefaultDatabaseResolver])
+  private val config: Config = resolver.resolveDependency(classOf[Config])
 
   def throwCantCompile(unknownPlan: LogicalPlan): Nothing = {
     throw new CantCompileQueryException(
@@ -163,14 +155,22 @@ case class DozerDbAdministrationCommandRuntime(
     }.sorted.mkString(" and/or ")
   }
 
-  private def adminActionErrorMessage(permissionState: PermissionState, actions: Seq[AdministrationAction]) =
+  private[internal] def adminActionErrorMessage(
+    permissionState: PermissionState,
+    actions: Seq[AdministrationAction]
+  ) = {
+    val allUnassignable = actions.forall(_.isInstanceOf[UnassignableAction])
+    val missingPrivilegeHelpMessageSuffix = if (allUnassignable) "" else s" $checkShowUserPrivilegesText"
+
     permissionState match {
       case PermissionState.EXPLICIT_DENY =>
-        "Permission denied for " + prettifyActionName(actions: _*) + ". " + checkShowUserPrivilegesText
+        s"Permission denied for ${prettifyActionName(actions: _*)}.$missingPrivilegeHelpMessageSuffix"
       case PermissionState.NOT_GRANTED =>
-        "Permission has not been granted for " + prettifyActionName(actions: _*) + ". " + checkShowUserPrivilegesText
+        val reason = if (allUnassignable) "cannot be" else "has not been"
+        s"Permission $reason granted for ${prettifyActionName(actions: _*)}.$missingPrivilegeHelpMessageSuffix"
       case PermissionState.EXPLICIT_GRANT => ""
     }
+  }
 
   private def getSource(
     maybeSource: Option[PrivilegePlan],
@@ -181,7 +181,7 @@ case class DozerDbAdministrationCommandRuntime(
       case _            => None
     }
 
-  private def checkActions(
+  private[internal] def checkActions(
     actions: Seq[DbmsAction],
     securityContext: SecurityContext
   ): Seq[(DbmsAction, PermissionState)] =
@@ -221,23 +221,15 @@ case class DozerDbAdministrationCommandRuntime(
           source = getSource(maybeSource, context)
         )
 
-    case AssertAllowedOneOfDbmsActions(maybeSource, actions) => context =>
-        AuthorizationOrPredicateExecutionPlan(
-          securityAuthorizationHandler,
-          (_, securityContext) => checkActions(actions, securityContext),
-          violationMessage = adminActionErrorMessage,
-          source = getSource(maybeSource, context)
-        )
-
     // Check Admin Rights for DBMS commands or self
     case AssertAllowedDbmsActionsOrSelf(user, actions) =>
       context => checkAdminRightsForDBMSOrSelf(user, actions)(context)
 
     // Check that the specified user is not the logged in user (eg. for some CREATE/DROP/ALTER USER commands)
     case AssertNotCurrentUser(source, userName, verb, violationMessage) => context =>
-        new PredicateExecutionPlan(
+        PredicateExecutionPlan(
           (params, sc) => !sc.subject().hasUsername(runtimeStringValue(userName, params)),
-          onViolation = (_, sc) =>
+          onViolation = (_, _, sc) =>
             new InvalidArgumentException(
               s"Failed to $verb the specified user '${sc.subject().executingUser()}': $violationMessage."
             ),
@@ -268,7 +260,7 @@ case class DozerDbAdministrationCommandRuntime(
         val sourcePlan: Option[ExecutionPlan] =
           Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context))
         ShowUsersExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planShowUsers(
-          symbols,
+          symbols.map(_.name),
           yields,
           returns,
           sourcePlan
@@ -277,7 +269,7 @@ case class DozerDbAdministrationCommandRuntime(
     // SHOW CURRENT USER
     case ShowCurrentUser(symbols, yields, returns) => _ =>
         ShowUsersExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planShowCurrentUser(
-          symbols,
+          symbols.map(_.name),
           yields,
           returns
         )
@@ -287,7 +279,7 @@ case class DozerDbAdministrationCommandRuntime(
     case createUser: CreateUser => context =>
         val sourcePlan: Option[ExecutionPlan] =
           Some(fullLogicalToExecutable.applyOrElse(createUser.source, throwCantCompile).apply(context))
-        CreateUserExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planCreateUser(
+        CreateUserExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler, config).planCreateUser(
           createUser,
           sourcePlan
         )
@@ -310,7 +302,7 @@ case class DozerDbAdministrationCommandRuntime(
     case alterUser: AlterUser => context =>
         val sourcePlan: Option[ExecutionPlan] =
           Some(fullLogicalToExecutable.applyOrElse(alterUser.source, throwCantCompile).apply(context))
-        AlterUserExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planAlterUser(
+        AlterUserExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler, config).planAlterUser(
           alterUser,
           sourcePlan
         )
@@ -326,22 +318,10 @@ case class DozerDbAdministrationCommandRuntime(
     // ALTER CURRENT USER SET PASSWORD FROM $currentPassword TO 'newPassword'
     // ALTER CURRENT USER SET PASSWORD FROM $currentPassword TO $newPassword
     case SetOwnPassword(newPassword, currentPassword) => _ =>
-        SetOwnPasswordExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planSetOwnPassword(
+        SetOwnPasswordExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler, config).planSetOwnPassword(
           newPassword,
           currentPassword
         )
-
-    // TODO:  We may not need this.
-    case AssertNotBlockedDatabaseManagement(action) => (context) =>
-        {
-
-          new PredicateExecutionPlan(
-            (params, sc) => true,
-            onViolation = (_, sc) => new InvalidArgumentException(s"May not need this... use ??? "),
-            source = None
-          )
-
-        }
 
       /*
     Function Name: CreateDatabase
@@ -375,7 +355,7 @@ case class DozerDbAdministrationCommandRuntime(
     If the database name is invalid, an `InvalidArgumentException` will be thrown with the validation error message. If the database creation fails during the execution of the plan, an `IllegalStateException` is thrown indicating that the new database could not be created.
        */
 
-    /**
+      /**
      * case class CreateDatabase(
      * source: AdministrationCommandLogicalPlan,
      * databaseName: Either[String, Parameter],
@@ -386,11 +366,12 @@ case class DozerDbAdministrationCommandRuntime(
      * )(implicit idGen: IdGen) extends DatabaseAdministrationLogicalPlan(Some(source))
      *
      */
-    case CreateDatabase(source, databaseName, _) => (context) =>
+    //  case ShowDatabase(scope, verbose, symbols, yields, returns) => _ =>
+    case CreateDatabase(source, databaseName, _, _, _, _) => (context) =>
         {
           // TODO: Put this at top in main class.
           val config: Config = resolver.resolveDependency(classOf[Config])
-          val defaultGdbNameFromConfig: String = config.get(GraphDatabaseSettings.default_database)
+          val defaultGdbNameFromConfig: String = config.get(GraphDatabaseSettings.initial_default_database)
           val valuePropNames: Array[String] = Array("default", "name", "status", "uuid")
 
           val nameFields: NameFields = getNameFields(
@@ -414,8 +395,9 @@ case class DozerDbAdministrationCommandRuntime(
             normalExecutionEngine,
             securityAuthorizationHandler,
             s"""
-               | CREATE (database:Database)
+               | CREATE (database:Database)<-[:TARGETS]-(:DatabaseName {displayName: $$name, name: $$name, namespace: 'system-root', primary:true})
                | SET
+               | database.access = 'READ_WRITE',
                | database.created_at = datetime(),
                | database.default = $$default,
                | database.name = $$name,
@@ -434,7 +416,11 @@ case class DozerDbAdministrationCommandRuntime(
             ),
             QueryHandler
               .handleError {
-                case (error, _) => new IllegalStateException(s"Could not create new gdb called ${nameValue}", error)
+                case (error, _) =>
+                  new IllegalStateException(
+                    s"Could not create new gdb called ${nameValue}. It most likely already exists.",
+                    error
+                  )
               },
             Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context))
           )
@@ -462,6 +448,28 @@ case class DozerDbAdministrationCommandRuntime(
     Errors:
     In case the number of databases exceeds the maximum allowed limit, a `DatabaseLimitReachedException` is thrown.
      */
+
+    case AssertManagementActionNotBlocked(action: AdministrationAction) => context =>
+        AuthorizationAndPredicateExecutionPlan(
+          securityAuthorizationHandler,
+          (params, securityContext) =>
+            Seq((
+              action,
+              securityContext.allowsAdminAction(
+                new AdminActionOnResource(
+                  ActionMapper.asKernelAction(action),
+                  new DatabaseScope(""),
+                  Segment.ALL
+                )
+              )
+            )),
+          violationMessage = adminActionErrorMessage
+          // source = getSource(action, context)
+        )
+
+    case EnsureNameIsNotAmbiguous(source, databaseName, isComposite) =>
+      (context) => fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context)
+
     case EnsureValidNumberOfDatabases(source) => (context) =>
         UpdatingSystemCommandExecutionPlan(
           "EnsureValidNumberOfDatabases",
@@ -479,7 +487,7 @@ case class DozerDbAdministrationCommandRuntime(
                   "You have reached the limit on the number of databases you can create."
                 );
               }
-              None
+              Continue
             }),
           Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context))
         )
@@ -488,11 +496,10 @@ case class DozerDbAdministrationCommandRuntime(
     case ShowDatabase(scope, verbose, symbols, yields, returns) => _ =>
         ShowDatabasesExecutionPlanner(
           resolver,
-          defaultDatabaseResolver,
           normalExecutionEngine,
           securityAuthorizationHandler
-        )(CommunityExtendedDatabaseInfoMapper)
-          .planShowDatabases(scope, verbose, symbols, yields, returns)
+        )
+          .planShowDatabases(scope, verbose, symbols.map(_.name), yields, returns)
 
     case DoNothingIfNotExists(source, label, name, operation, valueMapper) => context =>
         val sourcePlan: Option[ExecutionPlan] =
@@ -515,23 +522,21 @@ case class DozerDbAdministrationCommandRuntime(
           sourcePlan
         )
 
-    case DoNothingIfDatabaseNotExists(source, name, operation, valueMapper, databaseTypeFilter) => context =>
+    case DoNothingIfDatabaseNotExists(source, name, operation, databaseTypeFilter) => context =>
         val sourcePlan: Option[ExecutionPlan] =
           Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context))
         DoNothingExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planDoNothingIfDatabaseNotExists(
           name,
-          valueMapper,
           operation,
           sourcePlan,
           databaseTypeFilter
         )
 
-    case DoNothingIfDatabaseExists(source, name, valueMapper, databaseTypeFilter) => context =>
+    case DoNothingIfDatabaseExists(source, name, databaseTypeFilter) => context =>
         val sourcePlan: Option[ExecutionPlan] =
           Some(fullLogicalToExecutable.applyOrElse(source, throwCantCompile).apply(context))
         DoNothingExecutionPlanner(normalExecutionEngine, securityAuthorizationHandler).planDoNothingIfDatabaseExists(
           name,
-          valueMapper,
           sourcePlan,
           databaseTypeFilter
         )
@@ -553,40 +558,16 @@ case class DozerDbAdministrationCommandRuntime(
 
     // Non-administration commands that are allowed on system database, e.g. SHOW PROCEDURES
     case AllowedNonAdministrationCommands(statement) => _ =>
-        val updatedStatement = statement.rewrite(new Rewriter {
-          override def apply(v: AnyRef): AnyRef = instance(v)
-
-          private val instance = bottomUp(Rewriter.lift {
-            case s @ SingleQuery(clauses) => s.copy(clauses = rewriteClauses(clauses.toList, List()))(s.position)
-          })
-
-          @tailrec
-          // Remove internally added YIELD and RETURN for TERMINATE TRANSACTION
-          // as the command does not allow those clauses and otherwise will fail to parse
-          // No risk of throwing away any WHERE clauses, as those are not allowed either
-          private def rewriteClauses(clauses: List[Clause], rewrittenClause: List[Clause]): List[Clause] =
-            clauses match {
-              // Terminate transaction command with only a YIELD (don't think this case exists but to be on the safe side)
-              case (terminateClause: TerminateTransactionsClause) :: (_: Yield) :: Nil =>
-                rewrittenClause :+ terminateClause
-              // Terminate transaction command with YIELD and RETURN
-              case (terminateClause: TerminateTransactionsClause) :: (_: Yield) :: (_: Return) :: Nil =>
-                rewrittenClause :+ terminateClause
-              case c :: cs => rewriteClauses(cs, rewrittenClause :+ c)
-              case Nil     => rewrittenClause
-            }
-        }).asInstanceOf[Statement]
-
         SystemCommandExecutionPlan(
           "AllowedNonAdministrationCommand",
           normalExecutionEngine,
           securityAuthorizationHandler,
-          QueryRenderer.render(updatedStatement),
+          QueryRenderer.render(statement),
           MapValue.EMPTY,
           // If we have a non admin command executing in the system database, forbid it to make reads / writes
           // from the system graph. This is to prevent queries such as SHOW PROCEDURES YIELD * RETURN ()--()
           // from leaking nodes from the system graph: the ()--() would return empty results
-          modeConverter = s => s.withMode(AccessMode.Static.ACCESS)
+          modeConverter = s => s.withMode(new RestrictedAccessMode(s.mode(), AccessMode.Static.ACCESS))
         )
 
     // Ignore the log command in community

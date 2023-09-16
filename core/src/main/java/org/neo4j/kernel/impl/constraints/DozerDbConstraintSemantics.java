@@ -17,33 +17,44 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 /*
- * Modifications Copyright (c) DozerDB
- * https://dozerdb.org
+ *  Modifications Copyright (c) DozerDB
+ *  https://dozerdb.org
  */
 package org.neo4j.kernel.impl.constraints;
 
 import org.neo4j.annotations.service.ServiceProvider;
 import org.neo4j.common.TokenNameLookup;
 import org.neo4j.internal.kernel.api.CursorFactory;
+import org.neo4j.internal.kernel.api.EntityCursor;
 import org.neo4j.internal.kernel.api.NodeCursor;
 import org.neo4j.internal.kernel.api.NodeLabelIndexCursor;
 import org.neo4j.internal.kernel.api.PropertyCursor;
 import org.neo4j.internal.kernel.api.Read;
 import org.neo4j.internal.kernel.api.RelationshipScanCursor;
 import org.neo4j.internal.kernel.api.RelationshipTypeIndexCursor;
+import org.neo4j.internal.kernel.api.exceptions.schema.ConstraintValidationException;
 import org.neo4j.internal.kernel.api.exceptions.schema.CreateConstraintFailureException;
 import org.neo4j.internal.schema.ConstraintDescriptor;
 import org.neo4j.internal.schema.LabelSchemaDescriptor;
 import org.neo4j.internal.schema.RelationTypeSchemaDescriptor;
-import org.neo4j.internal.schema.constraints.NodeKeyConstraintDescriptor;
+import org.neo4j.internal.schema.SchemaDescriptor;
+import org.neo4j.internal.schema.constraints.ConstraintDescriptorFactory;
+import org.neo4j.internal.schema.constraints.KeyConstraintDescriptor;
+import org.neo4j.internal.schema.constraints.TypeConstraintDescriptor;
+import org.neo4j.internal.schema.constraints.TypeRepresentation;
 import org.neo4j.internal.schema.constraints.UniquenessConstraintDescriptor;
 import org.neo4j.io.pagecache.context.CursorContext;
+import org.neo4j.kernel.api.exceptions.schema.NodePropertyExistenceException;
+import org.neo4j.kernel.api.exceptions.schema.PropertyTypeException;
 import org.neo4j.memory.MemoryTracker;
+import org.neo4j.storageengine.api.PropertySelection;
 import org.neo4j.storageengine.api.StandardConstraintRuleAccessor;
 import org.neo4j.storageengine.api.StorageReader;
 import org.neo4j.storageengine.api.txstate.ReadableTransactionState;
 import org.neo4j.storageengine.api.txstate.TxStateVisitor;
+import org.neo4j.values.storable.Value;
 
 @ServiceProvider
 public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
@@ -55,7 +66,6 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
     }
 
     protected DozerDbConstraintSemantics(int priority) {
-
         super(priority);
     }
 
@@ -65,8 +75,9 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
     }
 
     @Override
-    public void assertNodeKeyConstraintAllowed(LabelSchemaDescriptor descriptor)
-            throws CreateConstraintFailureException {}
+    public void assertKeyConstraintAllowed(SchemaDescriptor descriptor) throws CreateConstraintFailureException {
+        // We don't need to do anything here.
+    }
 
     @Override
     public void validateNodeKeyConstraint(
@@ -74,6 +85,17 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
             NodeCursor nodeCursor,
             PropertyCursor propertyCursor,
             LabelSchemaDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        // TODO: Implement
+    }
+
+    @Override
+    public void validateRelKeyConstraint(
+            RelationshipTypeIndexCursor allRelationships,
+            RelationshipScanCursor relCursor,
+            PropertyCursor propertyCursor,
+            RelationTypeSchemaDescriptor descriptor,
             TokenNameLookup tokenNameLookup)
             throws CreateConstraintFailureException {
         // TODO: Implement
@@ -108,7 +130,6 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
     @Override
     public void validateRelationshipPropertyExistenceConstraint(
             RelationshipTypeIndexCursor allRelationships,
-            RelationshipScanCursor relationshipCursor,
             PropertyCursor propertyCursor,
             RelationTypeSchemaDescriptor descriptor,
             TokenNameLookup tokenNameLookup)
@@ -116,12 +137,8 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
         // TODO: Implement
     }
 
-    @Override
-    public ConstraintDescriptor readConstraint(ConstraintDescriptor constraint) {
-        return constraint;
-    }
-
     protected ConstraintDescriptor readNonStandardConstraint(ConstraintDescriptor constraint, String errorMessage) {
+        // Need to check if constraint supports property existence - throw an error or return constraint.
         return constraint;
     }
 
@@ -132,16 +149,21 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
     }
 
     @Override
-    public ConstraintDescriptor createNodeKeyConstraintRule(
-            long ruleId, NodeKeyConstraintDescriptor descriptor, long indexId) throws CreateConstraintFailureException {
-        // We want to use the accessor to create the constraint rule.
-        return accessor.createNodeKeyConstraintRule(ruleId, descriptor, indexId);
+    public ConstraintDescriptor createKeyConstraintRule(long ruleId, KeyConstraintDescriptor descriptor, long indexId)
+            throws CreateConstraintFailureException {
+        return this.accessor.createKeyConstraintRule(ruleId, descriptor, indexId);
     }
 
     @Override
     public ConstraintDescriptor createExistenceConstraint(long ruleId, ConstraintDescriptor descriptor)
             throws CreateConstraintFailureException {
-        return accessor.createExistenceConstraint(ruleId, descriptor);
+        return this.accessor.createExistenceConstraint(ruleId, descriptor);
+    }
+
+    @Override
+    public ConstraintDescriptor createPropertyTypeConstraint(long ruleId, TypeConstraintDescriptor descriptor)
+            throws CreateConstraintFailureException {
+        return this.accessor.createPropertyTypeConstraint(ruleId, descriptor);
     }
 
     @Override
@@ -166,11 +188,29 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
             LabelSchemaDescriptor descriptor,
             TokenNameLookup tokenNameLookup)
             throws CreateConstraintFailureException {
-        // TODO: We need to loop through the nodeCursor and check that the LabelSchemaDescriptor properties are all
-        // present.
-        // TODO: If we find a bad one we throw an exception.
-        // TODO: Implement
+        while (nodeCursor.next()) {
+            if (this.verify(descriptor.getPropertyIds(), propertyCursor, nodeCursor)) {
+                continue;
+            }
+            NodePropertyExistenceException nodePropertyExistenceException = new NodePropertyExistenceException(
+                    descriptor,
+                    ConstraintDescriptorFactory::existsForSchema,
+                    ConstraintValidationException.Phase.VERIFICATION,
+                    nodeCursor.nodeReference(),
+                    tokenNameLookup);
+            throw new CreateConstraintFailureException(
+                    nodePropertyExistenceException.constraint(), nodePropertyExistenceException);
+        }
+    }
 
+    private boolean verify(int[] propertyIds, PropertyCursor propertyCursor, EntityCursor entityCursor) {
+
+        entityCursor.properties(propertyCursor, PropertySelection.onlyKeysSelection(propertyIds));
+
+        int propCount = propertyIds.length;
+        while (propertyCursor.next()) propCount--;
+
+        return propCount == 0;
     }
 
     @Override
@@ -181,5 +221,92 @@ public class DozerDbConstraintSemantics extends StandardConstraintSemantics {
             TokenNameLookup tokenNameLookup)
             throws CreateConstraintFailureException {
         validateNodePropertyExistenceConstraint(nodeCursor, propertyCursor, descriptor, tokenNameLookup);
+    }
+
+    @Override
+    public void validateRelKeyConstraint(
+            RelationshipScanCursor relCursor,
+            PropertyCursor propertyCursor,
+            RelationTypeSchemaDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        validateRelationshipPropertyExistenceConstraint(relCursor, propertyCursor, descriptor, tokenNameLookup);
+    }
+
+    @Override
+    public void validateNodePropertyTypeConstraint(
+            NodeCursor nodeCursor,
+            PropertyCursor propertyCursor,
+            TypeConstraintDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        while (nodeCursor.next()) {
+            this.validateConstraint(descriptor, nodeCursor, propertyCursor, tokenNameLookup);
+        }
+    }
+
+    @Override
+    public void validateNodePropertyTypeConstraint(
+            NodeLabelIndexCursor allNodes,
+            NodeCursor nodeCursor,
+            PropertyCursor propertyCursor,
+            TypeConstraintDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        while (allNodes.next()) {
+            allNodes.node(nodeCursor);
+            this.validateNodePropertyTypeConstraint(nodeCursor, propertyCursor, descriptor, tokenNameLookup);
+        }
+    }
+
+    @Override
+    public void validateRelationshipPropertyTypeConstraint(
+            RelationshipScanCursor relationshipCursor,
+            PropertyCursor propertyCursor,
+            TypeConstraintDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        while (relationshipCursor.next()) {
+            this.validateConstraint(descriptor, relationshipCursor, propertyCursor, tokenNameLookup);
+        }
+    }
+
+    @Override
+    public void validateRelationshipPropertyTypeConstraint(
+            RelationshipTypeIndexCursor allRelationships,
+            PropertyCursor propertyCursor,
+            TypeConstraintDescriptor descriptor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        while (allRelationships.next()) {
+            if (allRelationships.readFromStore()) {
+                this.validateConstraint(descriptor, allRelationships, propertyCursor, tokenNameLookup);
+            }
+        }
+    }
+
+    private void validateConstraint(
+            TypeConstraintDescriptor descriptor,
+            EntityCursor entityCursor,
+            PropertyCursor propertyCursor,
+            TokenNameLookup tokenNameLookup)
+            throws CreateConstraintFailureException {
+        entityCursor.properties(
+                propertyCursor, PropertySelection.selection(descriptor.schema().getPropertyId()));
+        if (propertyCursor.next()) {
+            Value value = propertyCursor.propertyValue();
+
+            // if (!descriptor.propertyType().valueIsOfTypes(value)) {
+            System.out.println(" *********************** Do we flip this.....!!!!  ");
+            if (TypeRepresentation.disallows(descriptor.propertyType(), value)) {
+                PropertyTypeException propertyTypeException = new PropertyTypeException(
+                        descriptor,
+                        ConstraintValidationException.Phase.VERIFICATION,
+                        entityCursor.reference(),
+                        tokenNameLookup,
+                        value);
+                throw new CreateConstraintFailureException(propertyTypeException.constraint(), propertyTypeException);
+            }
+        }
     }
 }

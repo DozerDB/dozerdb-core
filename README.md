@@ -13,7 +13,7 @@ See https://dozerdb.org for installation instructions.
 
 
 ## Development
-Please ensure you use java 11 or above when working on the plugin.
+Please ensure you use java 17 or above when working on the plugin.
 
 If you would like to use an open source java version manager - please check out https://sdkman.io/
 For those using sdkman - you can use the following command to switch to the favor of openjdk that we use.
@@ -39,7 +39,7 @@ properly.  Please ensure that your code has been formatted properly before submi
 ```
 
 ## Building
-Ensure you have JDK 11+ first or you will get compile errors.
+Ensure you have JDK 17+ first or you will get compile errors.
 
 To build the project - you can run the following command:
 ```

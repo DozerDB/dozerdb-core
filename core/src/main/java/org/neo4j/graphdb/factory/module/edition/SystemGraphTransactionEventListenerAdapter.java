@@ -1,92 +1,78 @@
 /*
- * Copyright (c) DozerDB.org
+ * Copyright (c) DozerDB
  * ALL RIGHTS RESERVED.
  *
  * DozerDb is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
+ *
+ *
+ *
  */
 package org.neo4j.graphdb.factory.module.edition;
 
-import static org.neo4j.configuration.GraphDatabaseSettings.default_database;
+import static org.neo4j.configuration.GraphDatabaseSettings.initial_default_database;
 import static org.neo4j.kernel.database.NamedDatabaseId.NAMED_SYSTEM_DATABASE_ID;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.neo4j.configuration.Config;
-import org.neo4j.dbms.database.DatabaseManager;
-import org.neo4j.dbms.systemgraph.CommunityTopologyGraphDbmsModel;
-import org.neo4j.dbms.systemgraph.TopologyGraphDbmsModel;
+import org.neo4j.dbms.database.MultiDatabaseManager;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.event.TransactionData;
 import org.neo4j.graphdb.event.TransactionEventListenerAdapter;
 import org.neo4j.graphdb.factory.module.GlobalModule;
 import org.neo4j.kernel.database.NamedDatabaseId;
-import org.neo4j.logging.Log;
+import org.neo4j.logging.InternalLog;
 
 /**
  * The SystemGraphTransactionEventListenerAdapter class extends the TransactionEventListenerAdapter
- * and overrides its methods to handle the transaction events in the context of the system graph
- * database. This class is used to initialize and manage other databases besides the system and
- * default ones.
+ * and overrides its methods to handle the transaction events in the context of the system graph database.
+ * This class is used to initialize and manage other databases besides the system and default ones.
  * <p>
- * This class has the ability to retrieve the id of a named database, and to handle the updates
- * after a commit in a system database is performed.
+ * This class has the ability to retrieve the id of a named database,
+ * and to handle the updates after a commit in a system database is performed.
  * <p>
  * The key methods of this class are:
  * <p>
- * - getNamedDatabaseIdForName(String nameToFind): Retrieves the id of a database with a specified
- * name. - afterCommit(TransactionData txData, Object state, GraphDatabaseService systemDatabase):
- * Handles changes in the system database after a commit has been performed. Specifically, it checks
- * the status and name of the assigned node properties. If these properties meet certain conditions,
- * it retrieves the named database id associated with the name, creates the database if it exists,
- * and starts the database.
+ * - getNamedDatabaseIdForName(String nameToFind): Retrieves the id of a database with a specified name.
+ * - afterCommit(TransactionData txData, Object state, GraphDatabaseService systemDatabase): Handles changes
+ * in the system database after a commit has been performed. Specifically, it checks the status and name of
+ * the assigned node properties. If these properties meet certain conditions, it retrieves the named database id
+ * associated with the name, creates the database if it exists, and starts the database.
  * <p>
- * This class also contains a private final instance of DatabaseManager, which is used to handle
- * database operations.
+ * This class also contains a private final instance of DatabaseManager, which is used to handle database operations.
  */
 public class SystemGraphTransactionEventListenerAdapter extends TransactionEventListenerAdapter<Object> {
 
     protected final Config config;
-    private final DatabaseManager<?> databaseManager;
-    private final GlobalModule globalModule;
+    private final MultiDatabaseManager databaseManager;
     private final List<String> gdbsToIgnore;
-    private final Log log;
 
-    public SystemGraphTransactionEventListenerAdapter(DatabaseManager<?> databaseManager, GlobalModule globalModule) {
+    private final InternalLog log;
 
-        this.databaseManager = databaseManager;
-        this.globalModule = globalModule;
+    // protected final Log userLog;
+    public SystemGraphTransactionEventListenerAdapter(
+            MultiDatabaseManager multiDatabaseManager, GlobalModule globalModule) {
+
+        this.databaseManager = multiDatabaseManager;
+
         this.config = globalModule.getGlobalConfig();
-        String defaultDatabaseName = config.get(default_database);
+
+        log = globalModule.getLogService().getInternalLogProvider().getLog(this.getClass());
+        String defaultDatabaseName = config.get(initial_default_database);
         String systemDatabaseName = NAMED_SYSTEM_DATABASE_ID.name();
 
         gdbsToIgnore = List.of(defaultDatabaseName, systemDatabaseName);
-
-        log = globalModule.getLogService().getInternalLogProvider().getLog(this.getClass());
     }
 
     public NamedDatabaseId getNamedDatabaseIdForName(String nameToFind) {
 
-        TopologyGraphDbmsModel topologyGraphDbmsModel;
-
-        try (var tx =
-                databaseManager.getSystemDatabaseContext().databaseFacade().beginTx()) {
-            topologyGraphDbmsModel = new CommunityTopologyGraphDbmsModel(tx);
-
-            // Lets initialize all the graphs not system or default.
-            return topologyGraphDbmsModel.getAllDatabaseIds().stream()
-                    .filter(dId -> dId.name().equals(nameToFind))
-                    .findFirst()
-                    .orElse(null);
-        } catch (Exception e) {
-
-            log.error(
-                    " An exception was caught trying to get all database ids from the topology graph model.  Error: {}",
-                    e.getMessage());
-        }
-        return null;
+        return this.databaseManager.listAllNamedDatabaseIds().stream()
+                .filter(namedDatabaseId -> namedDatabaseId.name().equals(nameToFind))
+                .findFirst()
+                .orElse(null);
     } // End
 
     @Override

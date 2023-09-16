@@ -4,11 +4,13 @@
     <parent>
         <groupId>org.dozerdb</groupId>
         <artifactId>dozerdb-core-parent</artifactId>
-        <version>4.4.25</version>
+        <version>5.12.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
+
+
     <artifactId>dozerdb-core</artifactId>
-    <version>4.4.25</version>
+    <version>5.12.0</version>
 
     <name>DozerDB</name>
     <description>Enhances Neo4j Community (AKA Core) with enterprise features.</description>
@@ -111,26 +113,31 @@
             <artifactId>neo4j-import-tool</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.neo4j</groupId>
-            <artifactId>neo4j-batch-insert</artifactId>
-            <version>${project.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>org.neo4j.app</groupId>
             <artifactId>neo4j-server</artifactId>
             <version>${project.version}</version>
         </dependency>
-        <dependency>
-            <groupId>org.neo4j</groupId>
-            <artifactId>neo4j-buffers</artifactId>
-            <version>${project.version}</version>
-        </dependency>
+
         <dependency>
             <groupId>org.neo4j</groupId>
             <artifactId>neo4j-capabilities</artifactId>
             <version>${project.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j-cypher</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j-cypher-runtime-util</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.neo4j</groupId>
             <artifactId>neo4j-record-storage-engine</artifactId>
@@ -195,17 +202,7 @@
         </dependency>
 
 
-        <dependency>
-            <groupId>org.parboiled</groupId>
-            <artifactId>parboiled-scala_${scala.binary.version}</artifactId>
-            <version>1.2.0</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>scala-library</artifactId>
-                    <groupId>org.scala-lang</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
+
 
         <dependency>
             <groupId>com.propensive</groupId>

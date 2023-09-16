@@ -1,5 +1,5 @@
 /*
- * Copyright (c) DozerDB.org
+ * Copyright (c) DozerDB
  * ALL RIGHTS RESERVED.
  *
  * DozerDb is free software: you can redistribute it and/or modify
@@ -15,12 +15,7 @@ import org.eclipse.collections.api.set.primitive.LongSet;
 import org.eclipse.collections.api.set.primitive.MutableIntSet;
 import org.eclipse.collections.impl.set.mutable.primitive.IntHashSet;
 import org.neo4j.exceptions.KernelException;
-import org.neo4j.internal.kernel.api.CursorFactory;
-import org.neo4j.internal.kernel.api.NodeCursor;
-import org.neo4j.internal.kernel.api.PropertyCursor;
-import org.neo4j.internal.kernel.api.Read;
-import org.neo4j.internal.kernel.api.RelationshipScanCursor;
-import org.neo4j.internal.kernel.api.TokenSet;
+import org.neo4j.internal.kernel.api.*;
 import org.neo4j.internal.kernel.api.exceptions.schema.ConstraintValidationException;
 import org.neo4j.io.IOUtils;
 import org.neo4j.io.pagecache.context.CursorContext;
@@ -32,21 +27,20 @@ import org.neo4j.storageengine.api.txstate.RelationshipModifications;
 import org.neo4j.storageengine.api.txstate.TxStateVisitor;
 
 /**
- * The `ConstraintDelegator` class extends the `TxStateVisitor.Delegator` to validate constraints on
- * nodes and relationships within the Neo4j database during transaction states.
+ * The `ConstraintDelegator` class extends the `TxStateVisitor.Delegator` to validate constraints on nodes and relationships
+ * within the Neo4j database during transaction states.
  * <p>
- * This class is responsible for: - Checking constraints on nodes when node properties or labels
- * change. - Checking constraints on relationships when relationship properties change or new
- * relationships are created. - Ensuring that specific nodes and relationships meet the required
- * property existence constraints.
+ * This class is responsible for:
+ * - Checking constraints on nodes when node properties or labels change.
+ * - Checking constraints on relationships when relationship properties change or new relationships are created.
+ * - Ensuring that specific nodes and relationships meet the required property existence constraints.
  * <p>
- * Internally, the class utilizes `NodeCursor`, `PropertyCursor`, and `RelationshipScanCursor` to
- * interact with Neo4j's storage layer and retrieve node/relationship properties and labels. It then
- * checks these against constraints defined by the `ConstraintChecker` to determine if the node or
- * relationship violates any constraints.
+ * Internally, the class utilizes `NodeCursor`, `PropertyCursor`, and `RelationshipScanCursor` to interact with
+ * Neo4j's storage layer and retrieve node/relationship properties and labels. It then checks these against constraints
+ * defined by the `ConstraintChecker` to determine if the node or relationship violates any constraints.
  * <p>
- * The class also provides utility methods to validate existence, populate properties, and validate
- * properties of nodes and relationships against the defined constraints.
+ * The class also provides utility methods to validate existence, populate properties, and validate properties of nodes
+ * and relationships against the defined constraints.
  */
 public class ConstraintDelegator extends TxStateVisitor.Delegator {
 
@@ -117,12 +111,11 @@ public class ConstraintDelegator extends TxStateVisitor.Delegator {
     }
 
     /**
-     * Checks constraints on the specified node by its ID. Validates that required properties are
-     * present for the node.
+     * Checks constraints on the specified node by its ID.
+     * Validates that required properties are present for the node.
      *
      * @param nodeId The ID of the node to check.
-     * @throws NodePropertyExistenceException If the specified node does not meet the property
-     *                                        existence constraints.
+     * @throws NodePropertyExistenceException If the specified node does not meet the property existence constraints.
      */
     private void checkNode(long nodeId) throws NodePropertyExistenceException {
         // If no property constraints are defined, skip the check
@@ -174,12 +167,11 @@ public class ConstraintDelegator extends TxStateVisitor.Delegator {
     }
 
     /**
-     * Checks the constraints on the specified relationship by its ID. It validates that required
-     * properties are present for the relationship.
+     * Checks the constraints on the specified relationship by its ID.
+     * It validates that required properties are present for the relationship.
      *
      * @param relId The ID of the relationship to check.
-     * @throws RelationshipPropertyExistenceException If the specified relationship does not meet the
-     *                                                property existence constraints.
+     * @throws RelationshipPropertyExistenceException If the specified relationship does not meet the property existence constraints.
      */
     private void checkRel(long relId) throws RelationshipPropertyExistenceException {
         if (constraintChecker.getRelPropertyMap().isEmpty()) {
@@ -225,9 +217,9 @@ public class ConstraintDelegator extends TxStateVisitor.Delegator {
     }
 
     /**
-     * Validates if the specified relationship has all the required properties as specified in the
-     * shouldHavePropertiesArray. If a required property is missing, it triggers a constraint
-     * failure.
+     * Validates if the specified relationship has all the required properties
+     * as specified in the shouldHavePropertiesArray. If a required property
+     * is missing, it triggers a constraint failure.
      *
      * @param relId                     The ID of the relationship to check.
      * @param typeToCheck               The type of the relationship.

@@ -17,360 +17,307 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+
 /*
- * Modifications Copyright (c) DozerDB
- * https://dozerdb.org
+ *  Modifications Copyright (c) DozerDB
+ *  https://dozerdb.org
  */
+
 package org.neo4j.graphdb.factory.module.edition;
 
 import static org.neo4j.configuration.GraphDatabaseSettings.SYSTEM_DATABASE_NAME;
-import static org.neo4j.graphdb.factory.EditionLocksFactories.createLockFactory;
-import static org.neo4j.graphdb.factory.EditionLocksFactories.createLockManager;
-import static org.neo4j.kernel.database.NamedDatabaseId.NAMED_SYSTEM_DATABASE_ID;
-import static org.neo4j.token.api.TokenHolder.TYPE_LABEL;
-import static org.neo4j.token.api.TokenHolder.TYPE_PROPERTY_KEY;
-import static org.neo4j.token.api.TokenHolder.TYPE_RELATIONSHIP_TYPE;
+import static org.neo4j.configuration.GraphDatabaseSettings.initial_default_database;
+import static org.neo4j.dbms.database.DatabaseContextProviderDelegate.delegate;
+import static org.neo4j.dbms.routing.RoutingTableTTLProvider.ttlFromConfig;
 
-import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.neo4j.bolt.dbapi.BoltGraphDatabaseManagementServiceSPI;
-import org.neo4j.bolt.dbapi.impl.BoltKernelDatabaseManagementServiceProvider;
+import org.neo4j.bolt.tx.TransactionManager;
 import org.neo4j.collection.Dependencies;
-import org.neo4j.common.DependencyResolver;
 import org.neo4j.configuration.Config;
+import org.neo4j.configuration.GraphDatabaseInternalSettings;
 import org.neo4j.configuration.GraphDatabaseSettings;
-import org.neo4j.configuration.connectors.BoltConnector;
-import org.neo4j.cypher.internal.javacompat.DozerDbCypherEngineProvider;
+import org.neo4j.configuration.database.readonly.ConfigBasedLookupFactory;
+import org.neo4j.configuration.database.readonly.ConfigReadOnlyDatabaseListener;
+import org.neo4j.dbms.CommunityDatabaseStateService;
+import org.neo4j.dbms.CommunityKernelPanicListener;
 import org.neo4j.dbms.DatabaseStateService;
-import org.neo4j.dbms.DozerDbDatabaseStateService;
 import org.neo4j.dbms.api.DatabaseManagementService;
 import org.neo4j.dbms.database.DatabaseContext;
-import org.neo4j.dbms.database.DatabaseInfoService;
-import org.neo4j.dbms.database.DatabaseManager;
+import org.neo4j.dbms.database.DatabaseContextProvider;
 import org.neo4j.dbms.database.DatabaseOperationCounts;
 import org.neo4j.dbms.database.DatabaseReferenceCacheClearingListener;
+import org.neo4j.dbms.database.DatabaseRepository;
+import org.neo4j.dbms.database.DatabaseStateMonitor;
+import org.neo4j.dbms.database.DefaultDatabaseContextFactoryComponents;
+import org.neo4j.dbms.database.DefaultDatabaseDetailsExtrasProvider;
 import org.neo4j.dbms.database.DefaultSystemGraphComponent;
 import org.neo4j.dbms.database.DefaultSystemGraphInitializer;
+import org.neo4j.dbms.database.DefaultTopologyInfoService;
+import org.neo4j.dbms.database.DozerDbDatabaseContextFactory;
+import org.neo4j.dbms.database.MultiDatabaseLifecycleService;
 import org.neo4j.dbms.database.MultiDatabaseManager;
 import org.neo4j.dbms.database.StandaloneDatabaseContext;
-import org.neo4j.dbms.database.StandaloneDatabaseInfoService;
 import org.neo4j.dbms.database.SystemGraphComponents;
 import org.neo4j.dbms.database.SystemGraphInitializer;
+import org.neo4j.dbms.database.TopologyInfoService;
+import org.neo4j.dbms.database.readonly.DefaultReadOnlyDatabases;
 import org.neo4j.dbms.database.readonly.ReadOnlyDatabases;
+import org.neo4j.dbms.database.readonly.SystemGraphReadOnlyDatabaseLookupFactory;
+import org.neo4j.dbms.database.readonly.SystemGraphReadOnlyListener;
 import org.neo4j.dbms.identity.DefaultIdentityModule;
 import org.neo4j.dbms.identity.ServerIdentity;
-import org.neo4j.dbms.procedures.StandaloneDatabaseStateProcedure;
+import org.neo4j.dbms.identity.ServerIdentityFactory;
+import org.neo4j.dbms.routing.ClientRoutingDomainChecker;
+import org.neo4j.dbms.routing.DefaultDatabaseAvailabilityChecker;
+import org.neo4j.dbms.routing.DefaultRoutingService;
+import org.neo4j.dbms.routing.LocalRoutingTableServiceValidator;
+import org.neo4j.dbms.routing.RoutingOption;
+import org.neo4j.dbms.routing.RoutingService;
+import org.neo4j.dbms.routing.SingleAddressRoutingTableProvider;
 import org.neo4j.dbms.systemgraph.CommunityTopologyGraphComponent;
-import org.neo4j.exceptions.KernelException;
 import org.neo4j.fabric.bootstrap.FabricServicesBootstrap;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.factory.module.GlobalModule;
-import org.neo4j.graphdb.factory.module.id.IdContextFactory;
-import org.neo4j.graphdb.factory.module.id.IdContextFactoryBuilder;
-import org.neo4j.internal.kernel.api.security.AbstractSecurityLog;
 import org.neo4j.internal.kernel.api.security.CommunitySecurityLog;
-import org.neo4j.io.fs.FileSystemAbstraction;
-import org.neo4j.kernel.api.Kernel;
-import org.neo4j.kernel.api.procedure.GlobalProcedures;
+import org.neo4j.io.device.DeviceMapper;
 import org.neo4j.kernel.api.security.SecurityModule;
 import org.neo4j.kernel.api.security.provider.NoAuthSecurityProvider;
 import org.neo4j.kernel.api.security.provider.SecurityProvider;
-import org.neo4j.kernel.availability.CompositeDatabaseAvailabilityGuard;
-import org.neo4j.kernel.database.DatabaseStartupController;
-import org.neo4j.kernel.database.DefaultDatabaseResolver;
-import org.neo4j.kernel.database.GlobalAvailabilityGuardController;
+import org.neo4j.kernel.database.DatabaseId;
+import org.neo4j.kernel.database.DatabaseIdRepository;
+import org.neo4j.kernel.database.DatabaseReferenceRepository;
+import org.neo4j.kernel.database.MapCachingDatabaseIdRepository;
 import org.neo4j.kernel.database.MapCachingDatabaseReferenceRepository;
-import org.neo4j.kernel.database.NamedDatabaseId;
+import org.neo4j.kernel.database.SystemGraphDatabaseIdRepository;
 import org.neo4j.kernel.database.SystemGraphDatabaseReferenceRepository;
-import org.neo4j.kernel.impl.constraints.ConstraintSemantics;
-import org.neo4j.kernel.impl.constraints.DozerDbConstraintSemantics;
-import org.neo4j.kernel.impl.core.DefaultLabelIdCreator;
-import org.neo4j.kernel.impl.core.DefaultPropertyTokenCreator;
-import org.neo4j.kernel.impl.core.DefaultRelationshipTypeCreator;
+import org.neo4j.kernel.impl.api.CommitProcessFactory;
 import org.neo4j.kernel.impl.factory.CommunityCommitProcessFactory;
 import org.neo4j.kernel.impl.factory.DbmsInfo;
-import org.neo4j.kernel.impl.locking.LocksFactory;
-import org.neo4j.kernel.impl.query.QueryEngineProvider;
+import org.neo4j.kernel.impl.pagecache.CommunityIOControllerService;
+import org.neo4j.kernel.internal.event.GlobalTransactionEventListeners;
+import org.neo4j.kernel.lifecycle.LifeSupport;
 import org.neo4j.kernel.lifecycle.Lifecycle;
-import org.neo4j.logging.LogProvider;
+import org.neo4j.kernel.lifecycle.LifecycleAdapter;
+import org.neo4j.logging.InternalLogProvider;
 import org.neo4j.logging.internal.LogService;
-import org.neo4j.logging.log4j.LogExtended;
-import org.neo4j.monitoring.Monitors;
-import org.neo4j.procedure.builtin.routing.AbstractRoutingProcedureInstaller;
-import org.neo4j.procedure.builtin.routing.ClientRoutingDomainChecker;
-import org.neo4j.procedure.builtin.routing.DefaultDatabaseAvailabilityChecker;
-import org.neo4j.procedure.builtin.routing.SingleInstanceRoutingProcedureInstaller;
+import org.neo4j.procedure.builtin.BuiltInDbmsProcedures.UpgradeAllowedChecker.UpgradeAlwaysAllowed;
+import org.neo4j.router.CommunityQueryRouterBoostrap;
 import org.neo4j.server.CommunityNeoWebServer;
 import org.neo4j.server.config.AuthConfigProvider;
 import org.neo4j.server.rest.repr.CommunityAuthConfigProvider;
 import org.neo4j.server.security.auth.CommunitySecurityModule;
 import org.neo4j.server.security.systemgraph.CommunityDefaultDatabaseResolver;
-import org.neo4j.server.security.systemgraph.UserSecurityGraphComponent;
 import org.neo4j.ssl.config.SslPolicyLoader;
-import org.neo4j.time.SystemNanoClock;
-import org.neo4j.token.DelegatingTokenHolder;
-import org.neo4j.token.TokenCreator;
-import org.neo4j.token.TokenHolders;
 
 /**
- * This implementation of {@link AbstractEditionModule} creates the implementations of services that
- * are specific to the Community edition.
+ * This class extends the CommunityEditionModule code adding in the appropriate hooks to enable DozerDb additional features such as multi database.
  */
-public class DozerDbEditionModule extends StandaloneEditionModule {
-
+public class DozerDbEditionModule extends AbstractEditionModule implements DefaultDatabaseContextFactoryComponents {
     protected final SslPolicyLoader sslPolicyLoader;
     protected final GlobalModule globalModule;
     protected final ServerIdentity identityModule;
-    private final CompositeDatabaseAvailabilityGuard globalAvailabilityGuard;
+    private final MapCachingDatabaseReferenceRepository databaseReferenceRepo;
+    private final DeviceMapper deviceMapper;
 
     protected DatabaseStateService databaseStateService;
-    private ReadOnlyDatabases globalReadOnlyChecker;
-    private FabricServicesBootstrap fabricServicesBootstrap;
+    protected ReadOnlyDatabases globalReadOnlyChecker;
+    private Lifecycle defaultDatabaseInitializer = new LifecycleAdapter();
+    private SystemGraphComponents systemGraphComponents;
 
     public DozerDbEditionModule(GlobalModule globalModule) {
         Dependencies globalDependencies = globalModule.getGlobalDependencies();
         Config globalConfig = globalModule.getGlobalConfig();
         LogService logService = globalModule.getLogService();
-        SystemNanoClock globalClock = globalModule.getGlobalClock();
-        DependencyResolver externalDependencies = globalModule.getExternalDependencyResolver();
         this.globalModule = globalModule;
 
-        watcherServiceFactory = databaseLayout -> createDatabaseFileSystemWatcher(
-                globalModule.getFileWatcher(), databaseLayout, logService, fileWatcherFileNameFilter());
-
-        this.sslPolicyLoader = SslPolicyLoader.create(globalConfig, logService.getInternalLogProvider());
+        this.sslPolicyLoader =
+                SslPolicyLoader.create(globalModule.getFileSystem(), globalConfig, logService.getInternalLogProvider());
         globalDependencies.satisfyDependency(sslPolicyLoader); // for bolt and web server
         globalDependencies.satisfyDependency(new DatabaseOperationCounts.Counter()); // for global metrics
+        globalDependencies.satisfyDependency(new DatabaseStateMonitor.Counter()); // for global metrics
 
         globalDependencies.satisfyDependency(createAuthConfigProvider(globalModule));
 
-        identityModule = DefaultIdentityModule.fromGlobalModule(globalModule);
+        identityModule = tryResolveOrCreate(
+                        ServerIdentityFactory.class,
+                        globalModule.getExternalDependencyResolver(),
+                        DefaultIdentityModule::fromGlobalModule)
+                .create(globalModule);
         globalDependencies.satisfyDependency(identityModule);
 
-        LocksFactory lockFactory = createLockFactory(globalConfig, logService);
-        locksSupplier = () -> createLockManager(lockFactory, globalConfig, globalClock);
-
-        idContextFactory = tryResolveOrCreate(
-                IdContextFactory.class, externalDependencies, () -> createIdContextFactory(globalModule));
-
-        tokenHoldersProvider = createTokenHolderProvider(globalModule);
-
-        commitProcessFactory = new CommunityCommitProcessFactory();
-
-        constraintSemantics = createSchemaRuleVerifier();
+        deviceMapper = DeviceMapper.UNKNOWN_MAPPER;
+        globalDependencies.satisfyDependency(deviceMapper);
 
         connectionTracker = globalDependencies.satisfyDependency(createConnectionTracker());
-        globalAvailabilityGuard = globalModule.getGlobalAvailabilityGuard();
-    }
-
-    private static IdContextFactory createIdContextFactory(GlobalModule globalModule) {
-        return IdContextFactoryBuilder.of(
-                        globalModule.getFileSystem(),
-                        globalModule.getJobScheduler(),
-                        globalModule.getGlobalConfig(),
-                        globalModule.getTracers().getPageCacheTracer())
-                .build();
-    }
-
-    static Predicate<String> communityFileWatcherFileNameFilter() {
-        return defaultFileWatcherFilter();
-    }
-
-    protected static TokenCreator createRelationshipTypeCreator(Supplier<Kernel> kernelSupplier) {
-        return new DefaultRelationshipTypeCreator(kernelSupplier);
-    }
-
-    protected static TokenCreator createPropertyKeyCreator(Supplier<Kernel> kernelSupplier) {
-        return new DefaultPropertyTokenCreator(kernelSupplier);
-    }
-
-    protected static TokenCreator createLabelIdCreator(Supplier<Kernel> kernelSupplier) {
-        return new DefaultLabelIdCreator(kernelSupplier);
-    }
-
-    protected static Supplier<GraphDatabaseService> systemSupplier(DependencyResolver dependencies) {
-        return () -> {
-            DatabaseManager<?> databaseManager = dependencies.resolveDependency(DatabaseManager.class);
-            return databaseManager
-                    .getDatabaseContext(NAMED_SYSTEM_DATABASE_ID)
-                    .orElseThrow(
-                            () -> new RuntimeException("No database called `" + SYSTEM_DATABASE_NAME + "` was found."))
-                    .databaseFacade();
-        };
-    }
-
-    public static <T> T tryResolveOrCreate(
-            Class<T> clazz, DependencyResolver dependencies, Supplier<T> newInstanceMethod) {
-        return dependencies.containsDependency(clazz) ? dependencies.resolveDependency(clazz) : newInstanceMethod.get();
-    }
-
-    protected static BoltGraphDatabaseManagementServiceSPI createBoltKernelDatabaseManagementServiceProvider(
-            Dependencies dependencies,
-            DatabaseManagementService managementService,
-            Monitors monitors,
-            SystemNanoClock clock,
-            LogService logService) {
-        var config = dependencies.resolveDependency(Config.class);
-        var bookmarkAwaitDuration = config.get(GraphDatabaseSettings.bookmark_ready_timeout);
-        return new BoltKernelDatabaseManagementServiceProvider(
-                managementService, monitors, clock, bookmarkAwaitDuration);
+        databaseReferenceRepo = globalDependencies.satisfyDependency(new MapCachingDatabaseReferenceRepository());
     }
 
     @Override
-    public DatabaseManager<? extends StandaloneDatabaseContext> createDatabaseManager(GlobalModule globalModule) {
-        var databaseManager = new MultiDatabaseManager(globalModule, this);
-        databaseStateService = new DozerDbDatabaseStateService(databaseManager);
+    public DatabaseContextProvider<?> createDatabaseContextProvider(GlobalModule globalModule) {
+        var databaseContextFactory = new DozerDbDatabaseContextFactory(
+                globalModule,
+                identityModule,
+                getTransactionMonitorFactory(),
+                getIndexMonitorFactory(),
+                createIdContextFactory(globalModule),
+                deviceMapper,
+                new CommunityIOControllerService(),
+                createCommitProcessFactory(),
+                this);
 
-        globalModule.getGlobalLife().add(databaseManager);
-        globalModule.getGlobalDependencies().satisfyDependency(databaseManager);
+        var databaseIdRepo = new MapCachingDatabaseIdRepository();
+        var databaseRepository = new DatabaseRepository<StandaloneDatabaseContext>(databaseIdRepo);
+        var rootDatabaseIdRepository = DozerDbEditionModule.tryResolveOrCreate(
+                DatabaseIdRepository.class,
+                globalModule.getExternalDependencyResolver(),
+                () -> new SystemGraphDatabaseIdRepository(
+                        () -> databaseRepository.getDatabaseContext(DatabaseId.SYSTEM_DATABASE_ID),
+                        globalModule.getLogService().getInternalLogProvider()));
+        var rootDatabaseReferenceRepository = DozerDbEditionModule.tryResolveOrCreate(
+                DatabaseReferenceRepository.class,
+                globalModule.getExternalDependencyResolver(),
+                () -> new SystemGraphDatabaseReferenceRepository(databaseRepository::getSystemDatabaseContext));
+        databaseIdRepo.setDelegate(rootDatabaseIdRepository);
+        databaseReferenceRepo.setDelegate(rootDatabaseReferenceRepository);
+        var databaseIdCacheCleaner = new DatabaseReferenceCacheClearingListener(databaseIdRepo, databaseReferenceRepo);
+
+        var kernelPanicListener =
+                new CommunityKernelPanicListener(globalModule.getDatabaseEventListeners(), databaseRepository);
+        globalModule.getGlobalLife().add(kernelPanicListener);
+
+        MultiDatabaseManager multiDatabaseManager =
+                new MultiDatabaseManager(globalModule, databaseRepository, databaseContextFactory);
+        // TODO: Maybe move this into the service.
+        setupMultiDbSystemGraphAdapter(multiDatabaseManager);
+
+        var databaseLifecycles = new MultiDatabaseLifecycleService(
+                multiDatabaseManager,
+                databaseRepository,
+                globalModule.getGlobalConfig().get(initial_default_database),
+                databaseContextFactory,
+                globalModule.getLogService().getInternalLogProvider());
+        databaseStateService = new CommunityDatabaseStateService(databaseRepository);
+
+        globalModule.getGlobalLife().add(databaseLifecycles.systemDatabaseStarter());
+        globalModule.getGlobalLife().add(databaseLifecycles.allDatabaseStarter());
+        globalModule.getGlobalLife().add(databaseLifecycles.allDatabaseShutdown());
+        globalModule.getGlobalDependencies().satisfyDependency(delegate(databaseRepository));
         globalModule.getGlobalDependencies().satisfyDependency(databaseStateService);
 
         globalReadOnlyChecker = createGlobalReadOnlyChecker(
-                databaseManager,
+                databaseRepository,
                 globalModule.getGlobalConfig(),
                 globalModule.getTransactionEventListeners(),
                 globalModule.getGlobalLife(),
                 globalModule.getLogService().getInternalLogProvider());
 
-        var databaseReferenceRepo = new MapCachingDatabaseReferenceRepository(
-                new SystemGraphDatabaseReferenceRepository(databaseManager::getSystemDatabaseContext));
-        this.databaseReferenceRepo = databaseReferenceRepo;
-
-        fabricServicesBootstrap = new FabricServicesBootstrap.Community(
-                globalModule.getGlobalLife(),
-                globalModule.getGlobalDependencies(),
-                globalModule.getLogService(),
-                databaseManager,
-                databaseReferenceRepo);
-
-        var databaseIdCacheCleaner = new DatabaseReferenceCacheClearingListener(
-                databaseManager.databaseIdRepository(), databaseReferenceRepo);
         globalModule
                 .getTransactionEventListeners()
                 .registerTransactionEventListener(SYSTEM_DATABASE_NAME, databaseIdCacheCleaner);
 
-        this.setupMultiDbSystemGraphAdapter(databaseManager);
+        defaultDatabaseInitializer = databaseLifecycles.defaultDatabaseStarter();
 
-        return databaseManager;
+        globalModule.getGlobalDependencies().satisfyDependency(new UpgradeAlwaysAllowed());
+
+        return databaseRepository;
     }
 
     /**
-     * This method 'setupMultiDbSystemGraphAdapter' is used to set up a transaction event listener for
-     * the system database in a multi-database context.
+     * This method 'setupMultiDbSystemGraphAdapter' is used to set up a transaction event listener for the system database in a multi-database context.
      * <p>
-     * It registers an instance of 'SystemGraphTransactionEventListenerAdapter' as a transaction event
-     * listener for the named system database. The purpose of this setup is to handle and manage
-     * events triggered by transactions on the system database, enabling it to respond to changes made
-     * during these transactions.
+     * It registers an instance of 'SystemGraphTransactionEventListenerAdapter' as a transaction event listener
+     * for the named system database. The purpose of this setup is to handle and manage events triggered by
+     * transactions on the system database, enabling it to respond to changes made during these transactions.
      * <p>
-     * The method accepts a DatabaseManager object as a parameter which is then used to create a new
-     * instance of 'SystemGraphTransactionEventListenerAdapter'. This newly created instance is
-     * registered as the transaction event listener for the system database.
+     * The method accepts a DatabaseManager object as a parameter which is then used to create a new instance
+     * of 'SystemGraphTransactionEventListenerAdapter'. This newly created instance is registered as the transaction
+     * event listener for the system database.
      *
-     * @param databaseManager - The DatabaseManager instance to be used for managing databases. This
-     *                        is used in the creation of the
-     *                        'SystemGraphTransactionEventListenerAdapter' instance.
+     * @param multiDatabaseManager - The DatabaseManager instance to be used for managing databases.
+     *                             This is used in the creation of the 'SystemGraphTransactionEventListenerAdapter' instance.
      */
-    protected void setupMultiDbSystemGraphAdapter(DatabaseManager<?> databaseManager) {
+    protected void setupMultiDbSystemGraphAdapter(MultiDatabaseManager multiDatabaseManager) {
+
         globalModule
                 .getTransactionEventListeners()
                 .registerTransactionEventListener(
-                        NamedDatabaseId.NAMED_SYSTEM_DATABASE_ID.name(),
-                        new SystemGraphTransactionEventListenerAdapter(databaseManager, globalModule));
+                        SYSTEM_DATABASE_NAME,
+                        new SystemGraphTransactionEventListenerAdapter(multiDatabaseManager, globalModule));
     }
 
-    protected Function<NamedDatabaseId, TokenHolders> createTokenHolderProvider(GlobalModule platform) {
-        return databaseId -> {
-            DatabaseManager<?> databaseManager =
-                    platform.getGlobalDependencies().resolveDependency(MultiDatabaseManager.class);
-            Supplier<Kernel> kernelSupplier = () -> {
-                DatabaseContext databaseContext = databaseManager
-                        .getDatabaseContext(databaseId)
-                        .orElseThrow(() -> new IllegalStateException(
-                                "Default and system database kernels should always be accessible"));
-                return databaseContext.dependencies().resolveDependency(Kernel.class);
-            };
-            return new TokenHolders(
-                    new DelegatingTokenHolder(createPropertyKeyCreator(kernelSupplier), TYPE_PROPERTY_KEY),
-                    new DelegatingTokenHolder(createLabelIdCreator(kernelSupplier), TYPE_LABEL),
-                    new DelegatingTokenHolder(createRelationshipTypeCreator(kernelSupplier), TYPE_RELATIONSHIP_TYPE));
-        };
-    }
-
-    protected Predicate<String> fileWatcherFileNameFilter() {
-        return communityFileWatcherFileNameFilter();
-    }
-
-    protected ConstraintSemantics createSchemaRuleVerifier() {
-        return new DozerDbConstraintSemantics();
-    }
-
-    @Override
-    public QueryEngineProvider getQueryEngineProvider() {
-        return new DozerDbCypherEngineProvider();
-    }
-
-    @Override
-    public DatabaseStartupController getDatabaseStartupController() {
-        return new GlobalAvailabilityGuardController(globalAvailabilityGuard);
+    private static ReadOnlyDatabases createGlobalReadOnlyChecker(
+            DatabaseContextProvider<?> databaseContextProvider,
+            Config globalConfig,
+            GlobalTransactionEventListeners txListeners,
+            LifeSupport globalLife,
+            InternalLogProvider logProvider) {
+        var systemGraphReadOnlyLookup =
+                new SystemGraphReadOnlyDatabaseLookupFactory(databaseContextProvider, logProvider);
+        var configReadOnlyLookup =
+                new ConfigBasedLookupFactory(globalConfig, databaseContextProvider.databaseIdRepository());
+        var globalChecker = new DefaultReadOnlyDatabases(systemGraphReadOnlyLookup, configReadOnlyLookup);
+        var configListener = new ConfigReadOnlyDatabaseListener(globalChecker, globalConfig);
+        var systemGraphListener = new SystemGraphReadOnlyListener(txListeners, globalChecker);
+        globalLife.add(configListener);
+        globalLife.add(systemGraphListener);
+        return globalChecker;
     }
 
     @Override
     public Lifecycle createWebServer(
             DatabaseManagementService managementService,
+            TransactionManager transactionManager,
             Dependencies globalDependencies,
             Config config,
-            LogProvider userLogProvider,
+            InternalLogProvider userLogProvider,
             DbmsInfo dbmsInfo) {
         return new CommunityNeoWebServer(
                 managementService,
+                transactionManager,
                 globalDependencies,
                 config,
                 userLogProvider,
                 dbmsInfo,
                 globalModule.getMemoryPools(),
-                globalModule.getTransactionManager(),
                 globalModule.getGlobalClock());
     }
 
     @Override
-    public DatabaseInfoService createDatabaseInfoService(DatabaseManager<?> databaseManager) {
-        var address = globalModule.getGlobalConfig().get(BoltConnector.advertised_address);
-        return new StandaloneDatabaseInfoService(
-                identityModule.serverId(), address, databaseManager, databaseStateService, globalReadOnlyChecker);
-    }
-
-    @Override
-    public void registerEditionSpecificProcedures(GlobalProcedures globalProcedures, DatabaseManager<?> databaseManager)
-            throws KernelException {
-        globalProcedures.register(new StandaloneDatabaseStateProcedure(
+    public TopologyInfoService createTopologyInfoService(DatabaseContextProvider<?> databaseContextProvider) {
+        var detailsExtrasProvider = new DefaultDatabaseDetailsExtrasProvider(databaseContextProvider);
+        return new DefaultTopologyInfoService(
+                identityModule.serverId(),
+                globalModule.getGlobalConfig(),
                 databaseStateService,
-                databaseManager.databaseIdRepository(),
-                globalModule
-                        .getGlobalConfig()
-                        .get(BoltConnector.advertised_address)
-                        .toString()));
+                globalReadOnlyChecker,
+                detailsExtrasProvider);
     }
 
     @Override
-    protected AbstractRoutingProcedureInstaller createRoutingProcedureInstaller(
-            GlobalModule globalModule,
-            DatabaseManager<?> databaseManager,
-            ClientRoutingDomainChecker clientRoutingDomainChecker,
-            DefaultDatabaseResolver defaultDatabaseResolver) {
+    public RoutingService createRoutingService(
+            DatabaseContextProvider<?> databaseContextProvider, ClientRoutingDomainChecker clientRoutingDomainChecker) {
+        var logService = globalModule.getLogService();
         var portRegister = globalModule.getConnectorPortRegister();
         var config = globalModule.getGlobalConfig();
         var logProvider = globalModule.getLogService().getInternalLogProvider();
-        var databaseAvailabilityChecker = new DefaultDatabaseAvailabilityChecker(databaseManager);
-        return new SingleInstanceRoutingProcedureInstaller(
-                databaseAvailabilityChecker,
+        var databaseAvailabilityChecker = new DefaultDatabaseAvailabilityChecker(databaseContextProvider);
+
+        LocalRoutingTableServiceValidator validator =
+                new LocalRoutingTableServiceValidator(databaseAvailabilityChecker);
+        SingleAddressRoutingTableProvider routingTableProvider = new SingleAddressRoutingTableProvider(
+                portRegister, RoutingOption.ROUTE_WRITE_AND_READ, config, logProvider, ttlFromConfig(config));
+
+        return new DefaultRoutingService(
+                logService.getInternalLogProvider(),
+                validator,
+                routingTableProvider,
+                routingTableProvider,
                 clientRoutingDomainChecker,
-                portRegister,
                 config,
-                logProvider,
-                databaseReferenceRepo,
-                defaultDatabaseResolver);
+                () -> true,
+                defaultDatabaseResolver,
+                databaseReferenceRepo);
     }
 
     @Override
@@ -379,41 +326,55 @@ public class DozerDbEditionModule extends StandaloneEditionModule {
     }
 
     @Override
-    public SystemGraphInitializer createSystemGraphInitializer(GlobalModule globalModule) {
-        DependencyResolver globalDependencies = globalModule.getGlobalDependencies();
-        Supplier<GraphDatabaseService> systemSupplier = systemSupplier(globalDependencies);
-        var systemGraphComponents = globalModule.getSystemGraphComponents();
+    public void registerDatabaseInitializers(GlobalModule globalModule) {
+        registerSystemGraphInitializer(globalModule);
+        registerDefaultDatabaseInitializer(globalModule);
+    }
+
+    private void registerSystemGraphInitializer(GlobalModule globalModule) {
+        Supplier<GraphDatabaseService> systemSupplier =
+                DozerDbEditionModule.systemSupplier(globalModule.getGlobalDependencies());
         SystemGraphInitializer initializer = DozerDbEditionModule.tryResolveOrCreate(
                 SystemGraphInitializer.class,
                 globalModule.getExternalDependencyResolver(),
                 () -> new DefaultSystemGraphInitializer(systemSupplier, systemGraphComponents));
-        return globalModule.getGlobalDependencies().satisfyDependency(initializer);
+        globalModule.getGlobalDependencies().satisfyDependency(initializer);
+        globalModule.getGlobalLife().add(initializer);
+    }
+
+    protected void registerDefaultDatabaseInitializer(GlobalModule globalModule) {
+        globalModule.getGlobalLife().add(defaultDatabaseInitializer);
     }
 
     @Override
-    public void registerSystemGraphComponents(SystemGraphComponents systemGraphComponents, GlobalModule globalModule) {
+    public void registerSystemGraphComponents(
+            SystemGraphComponents.Builder systemGraphComponentsBuilder, GlobalModule globalModule) {
         var config = globalModule.getGlobalConfig();
         var log = globalModule.getLogService().getInternalLogProvider();
         var clock = globalModule.getGlobalClock();
         var systemGraphComponent = new DefaultSystemGraphComponent(config, clock);
-        systemGraphComponents.register(systemGraphComponent);
         var communityTopologyGraphComponentComponent = new CommunityTopologyGraphComponent(config, log);
-        systemGraphComponents.register(communityTopologyGraphComponentComponent);
+        systemGraphComponentsBuilder.register(systemGraphComponent);
+        systemGraphComponentsBuilder.register(communityTopologyGraphComponentComponent);
+        registerSecurityGraphComponent(systemGraphComponentsBuilder, globalModule);
+        this.systemGraphComponents = systemGraphComponentsBuilder.build();
     }
 
-    private void setupSecurityGraphInitializer(GlobalModule globalModule) {
-        Config config = globalModule.getGlobalConfig();
-        FileSystemAbstraction fileSystem = globalModule.getFileSystem();
-        LogProvider logProvider = globalModule.getLogService().getUserLogProvider();
-        AbstractSecurityLog securityLog =
-                new CommunitySecurityLog((LogExtended) logProvider.getLog(UserSecurityGraphComponent.class));
+    private void registerSecurityGraphComponent(
+            SystemGraphComponents.Builder systemGraphComponentsBuilder, GlobalModule globalModule) {
+        var config = globalModule.getGlobalConfig();
+        var fileSystem = globalModule.getFileSystem();
+        var logProvider = globalModule.getLogService().getInternalLogProvider();
+        var securityLog = new CommunitySecurityLog(logProvider.getLog(CommunitySecurityModule.class));
 
-        var communityComponent =
-                CommunitySecurityModule.createSecurityComponent(securityLog, config, fileSystem, logProvider);
+        var communityComponent = CommunitySecurityModule.createSecurityComponent(
+                config,
+                fileSystem,
+                logProvider,
+                securityLog,
+                globalModule.getOtherMemoryPool().getPoolMemoryTracker());
 
-        Dependencies dependencies = globalModule.getGlobalDependencies();
-        SystemGraphComponents systemGraphComponents = dependencies.resolveDependency(SystemGraphComponents.class);
-        systemGraphComponents.register(communityComponent);
+        systemGraphComponentsBuilder.register(communityComponent);
     }
 
     @Override
@@ -421,9 +382,13 @@ public class DozerDbEditionModule extends StandaloneEditionModule {
         setSecurityProvider(makeSecurityModule(globalModule));
     }
 
+    @Override
+    public DatabaseReferenceRepository getDatabaseReferenceRepo() {
+        return databaseReferenceRepo;
+    }
+
     private SecurityProvider makeSecurityModule(GlobalModule globalModule) {
         globalModule.getGlobalDependencies().satisfyDependency(CommunitySecurityLog.NULL_LOG);
-        setupSecurityGraphInitializer(globalModule);
         if (globalModule.getGlobalConfig().get(GraphDatabaseSettings.auth_enabled)) {
             SecurityModule securityModule = new CommunitySecurityModule(
                     globalModule.getLogService(), globalModule.getGlobalConfig(), globalModule.getGlobalDependencies());
@@ -435,35 +400,58 @@ public class DozerDbEditionModule extends StandaloneEditionModule {
 
     @Override
     public void createDefaultDatabaseResolver(GlobalModule globalModule) {
-        Supplier<GraphDatabaseService> systemDbSupplier = systemSupplier(globalModule.getGlobalDependencies());
-        CommunityDefaultDatabaseResolver defaultDatabaseResolver =
+        var systemDbSupplier = systemSupplier(globalModule.getGlobalDependencies());
+        var defaultDatabaseResolver =
                 new CommunityDefaultDatabaseResolver(globalModule.getGlobalConfig(), systemDbSupplier);
         globalModule
                 .getTransactionEventListeners()
                 .registerTransactionEventListener(SYSTEM_DATABASE_NAME, defaultDatabaseResolver);
-        setDefaultDatabaseResolver(defaultDatabaseResolver);
+        this.defaultDatabaseResolver = defaultDatabaseResolver;
     }
 
     @Override
-    public BoltGraphDatabaseManagementServiceSPI createBoltDatabaseManagementServiceProvider(
-            Dependencies dependencies,
-            DatabaseManagementService managementService,
-            Monitors monitors,
-            SystemNanoClock clock,
-            LogService logService) {
-        var kernelDatabaseManagementService = createBoltKernelDatabaseManagementServiceProvider(
-                dependencies, managementService, monitors, clock, logService);
-        return fabricServicesBootstrap.createBoltDatabaseManagementServiceProvider(
-                kernelDatabaseManagementService, managementService, monitors, clock);
+    public BoltGraphDatabaseManagementServiceSPI createBoltDatabaseManagementServiceProvider() {
+        return globalModule.getGlobalDependencies().resolveDependency(BoltGraphDatabaseManagementServiceSPI.class);
+    }
+
+    protected CommitProcessFactory createCommitProcessFactory() {
+        return new CommunityCommitProcessFactory();
     }
 
     @Override
-    public void bootstrapFabricServices() {
-        fabricServicesBootstrap.bootstrapServices();
+    public void bootstrapQueryRouterServices(DatabaseManagementService databaseManagementService) {
+        DatabaseContextProvider<? extends DatabaseContext> databaseRepository =
+                globalModule.getGlobalDependencies().resolveDependency(DatabaseContextProvider.class);
+        if (globalModule.getGlobalConfig().get(GraphDatabaseInternalSettings.query_router_new_stack)) {
+            var queryRouterBoostrap = new CommunityQueryRouterBoostrap(
+                    globalModule.getGlobalLife(),
+                    globalModule.getGlobalDependencies(),
+                    globalModule.getLogService(),
+                    databaseRepository,
+                    databaseReferenceRepo);
+            globalModule
+                    .getGlobalDependencies()
+                    .satisfyDependency(queryRouterBoostrap.bootstrapServices(databaseManagementService));
+        } else {
+            var fabricServicesBootstrap = new FabricServicesBootstrap.Community(
+                    globalModule.getGlobalLife(),
+                    globalModule.getGlobalDependencies(),
+                    globalModule.getLogService(),
+                    databaseRepository,
+                    databaseReferenceRepo);
+            globalModule
+                    .getGlobalDependencies()
+                    .satisfyDependency(fabricServicesBootstrap.bootstrapServices(databaseManagementService));
+        }
     }
 
     @Override
-    public ReadOnlyDatabases getReadOnlyChecker() {
+    public ReadOnlyDatabases readOnlyDatabases() {
         return globalReadOnlyChecker;
+    }
+
+    @Override
+    public SystemGraphComponents getSystemGraphComponents() {
+        return systemGraphComponents;
     }
 }

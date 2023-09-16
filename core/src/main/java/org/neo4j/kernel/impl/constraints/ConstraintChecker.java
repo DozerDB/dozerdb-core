@@ -1,5 +1,5 @@
 /*
- * Copyright (c) DozerDB.org
+ * Copyright (c) DozerDB
  * ALL RIGHTS RESERVED.
  *
  * DozerDb is free software: you can redistribute it and/or modify
@@ -10,11 +10,7 @@
 
 package org.neo4j.kernel.impl.constraints;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.function.Function;
 import org.eclipse.collections.api.iterator.MutableLongIterator;
 import org.eclipse.collections.api.map.primitive.MutableLongObjectMap;
@@ -25,11 +21,8 @@ import org.neo4j.internal.kernel.api.CursorFactory;
 import org.neo4j.internal.kernel.api.Read;
 import org.neo4j.internal.kernel.api.TokenSet;
 import org.neo4j.internal.kernel.api.exceptions.schema.ConstraintValidationException.Phase;
-import org.neo4j.internal.schema.ConstraintDescriptor;
-import org.neo4j.internal.schema.LabelSchemaDescriptor;
-import org.neo4j.internal.schema.RelationTypeSchemaDescriptor;
-import org.neo4j.internal.schema.SchemaDescriptor;
-import org.neo4j.internal.schema.SchemaProcessor;
+import org.neo4j.internal.schema.*;
+import org.neo4j.internal.schema.constraints.ConstraintDescriptorFactory;
 import org.neo4j.io.pagecache.context.CursorContext;
 import org.neo4j.kernel.api.exceptions.schema.NodePropertyExistenceException;
 import org.neo4j.kernel.api.exceptions.schema.RelationshipPropertyExistenceException;
@@ -38,9 +31,9 @@ import org.neo4j.storageengine.api.StorageReader;
 import org.neo4j.storageengine.api.txstate.TxStateVisitor;
 
 /**
- * This class is responsible for checking and enforcing schema constraints on Neo4j graph entities,
- * namely nodes and relationships. It handles validation related to property existence for nodes and
- * relationships.
+ * This class is responsible for checking and enforcing schema constraints
+ * on Neo4j graph entities, namely nodes and relationships.
+ * It handles validation related to property existence for nodes and relationships.
  */
 public class ConstraintChecker {
 
@@ -59,24 +52,20 @@ public class ConstraintChecker {
             };
 
     /**
-     * A function that constructs a {@link ConstraintChecker} based on the given
-     * {@link StorageReader}.
+     * A function that constructs a {@link ConstraintChecker} based on the given {@link StorageReader}.
      *
-     * <p>The function processes all constraints retrieved from the provided StorageReader. It
-     * categorizes
-     * these constraints into two lists: one for node label schema descriptors and another for
-     * relation type schema descriptors, but only if the constraint enforces property existence.
+     * <p>The function processes all constraints retrieved from the provided StorageReader. It categorizes
+     * these constraints into two lists: one for node label schema descriptors and another for relation type
+     * schema descriptors, but only if the constraint enforces property existence.
      *
-     * <p>If both the node label schema descriptors list and the relation type schema descriptors list
-     * are
-     * empty after processing all constraints, the function returns an empty checker (represented by
-     * the EMPTY_CHECKER constant). Otherwise, it creates and returns a new {@link ConstraintChecker}
-     * with the processed schema descriptors.
+     * <p>If both the node label schema descriptors list and the relation type schema descriptors list are
+     * empty after processing all constraints, the function returns an empty checker (represented by the
+     * EMPTY_CHECKER constant). Otherwise, it creates and returns a new {@link ConstraintChecker} with the
+     * processed schema descriptors.
      *
-     * @param storageReader The storage reader from which constraints are to be fetched and
-     * processed.
-     * @return A {@link ConstraintChecker} instance based on the provided storage reader's
-     * constraints, or the EMPTY_CHECKER if no relevant constraints are found.
+     * @param storageReader The storage reader from which constraints are to be fetched and processed.
+     * @return A {@link ConstraintChecker} instance based on the provided storage reader's constraints,
+     * or the EMPTY_CHECKER if no relevant constraints are found.
      */
     public static final Function<StorageReader, ConstraintChecker> STORAGE_READER_CONSTRAINT_BUILDER =
             storageReader -> {
@@ -120,8 +109,7 @@ public class ConstraintChecker {
     private final MutableLongObjectMap<int[]> relPropertyMap = new LongObjectHashMap<>();
 
     /**
-     * Constructor that initializes the constraint checker with the provided storage reader and schema
-     * descriptors.
+     * Constructor that initializes the constraint checker with the provided storage reader and schema descriptors.
      *
      * @param storageReader              The storage reader to retrieve schema constraints.
      * @param nodeLabelSchemaDescriptors List of node label schema descriptors.
@@ -262,8 +250,8 @@ public class ConstraintChecker {
 
     /**
      * Handles the failure of a node constraint. The method checks the property existence constraints
-     * associated with the provided node label. If any constraints are violated, it throws an
-     * appropriate exception indicating the failure.
+     * associated with the provided node label. If any constraints are violated, it throws an appropriate
+     * exception indicating the failure.
      *
      * @param nodeId      The ID of the node that failed the constraint.
      * @param label       The label of the node that failed the constraint.
@@ -285,7 +273,13 @@ public class ConstraintChecker {
 
                     if (constraintDescriptor.enforcesPropertyExistence()) {
                         throw new NodePropertyExistenceException(
-                                labelSchemaDescriptor, Phase.VALIDATION, nodeId, storageReader.tokenNameLookup());
+                                labelSchemaDescriptor,
+                                constraintDescriptor.isNodeKeyConstraint()
+                                        ? ConstraintDescriptorFactory::keyForSchema
+                                        : ConstraintDescriptorFactory::existsForSchema,
+                                Phase.VALIDATION,
+                                nodeId,
+                                storageReader.tokenNameLookup());
                     }
                 }
 
@@ -301,9 +295,9 @@ public class ConstraintChecker {
     }
 
     /**
-     * Handles the failure of a relationship constraint. The method checks the property existence
-     * constraints associated with the provided relationship type. If any constraints are violated, it
-     * throws an appropriate exception indicating the failure.
+     * Handles the failure of a relationship constraint. The method checks the property existence constraints
+     * associated with the provided relationship type. If any constraints are violated, it throws an appropriate
+     * exception indicating the failure.
      *
      * @param relId            The ID of the relationship that failed the constraint.
      * @param relationshipType The type of the relationship that failed the constraint.
@@ -326,7 +320,13 @@ public class ConstraintChecker {
 
                     if (constraintDescriptor.enforcesPropertyExistence()) {
                         throw new RelationshipPropertyExistenceException(
-                                relationTypeSchemaDescriptor, Phase.VALIDATION, relId, storageReader.tokenNameLookup());
+                                relationTypeSchemaDescriptor,
+                                constraintDescriptor.isRelationshipKeyConstraint()
+                                        ? ConstraintDescriptorFactory::keyForSchema
+                                        : ConstraintDescriptorFactory::existsForSchema,
+                                Phase.VALIDATION,
+                                relId,
+                                storageReader.tokenNameLookup());
                     }
                 }
 
