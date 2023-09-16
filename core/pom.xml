@@ -4,11 +4,11 @@
     <parent>
         <groupId>org.dozerdb</groupId>
         <artifactId>dozerdb-core-parent</artifactId>
-        <version>4.4.25-1.0.0-SNAPSHOT</version>
+        <version>4.4.25</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
     <artifactId>dozerdb-core</artifactId>
-    <version>4.4.25-1.0.0-SNAPSHOT</version>
+    <version>4.4.25</version>
 
     <name>DozerDB</name>
     <description>Enhances Neo4j Community (AKA Core) with enterprise features.</description>
