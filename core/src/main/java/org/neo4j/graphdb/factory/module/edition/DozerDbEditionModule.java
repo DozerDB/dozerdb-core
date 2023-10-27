@@ -95,6 +95,7 @@ import org.neo4j.kernel.impl.api.CommitProcessFactory;
 import org.neo4j.kernel.impl.factory.CommunityCommitProcessFactory;
 import org.neo4j.kernel.impl.factory.DbmsInfo;
 import org.neo4j.kernel.impl.pagecache.CommunityIOControllerService;
+import org.neo4j.kernel.impl.security.URLAccessRules;
 import org.neo4j.kernel.internal.event.GlobalTransactionEventListeners;
 import org.neo4j.kernel.lifecycle.LifeSupport;
 import org.neo4j.kernel.lifecycle.Lifecycle;
@@ -138,7 +139,7 @@ public class DozerDbEditionModule extends AbstractEditionModule implements Defau
         globalDependencies.satisfyDependency(new DatabaseStateMonitor.Counter()); // for global metrics
 
         globalDependencies.satisfyDependency(createAuthConfigProvider(globalModule));
-
+        globalDependencies.satisfyDependency(new URLAccessRules(null, globalModule.getUrlAccessRules())); // FIXME
         identityModule = tryResolveOrCreate(
                         ServerIdentityFactory.class,
                         globalModule.getExternalDependencyResolver(),
