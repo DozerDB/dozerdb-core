@@ -8,20 +8,20 @@
   <parent>
     <groupId>org.neo4j</groupId>
     <artifactId>parent</artifactId>
-    <version>5.13.0</version>
+    <version>5.14.0</version>
   </parent>
 
 
   <groupId>org.dozerdb</groupId>
   <artifactId>dozerdb-core-parent</artifactId>
-  <version>5.13.0</version>
+  <version>5.14.0</version>
   <packaging>pom</packaging>
   <name>dozerdb-core-parent</name>
   <description>DozerDB Plugin Core for Neo4j</description>
   <properties>
-    <neo4j.version>5.13.0</neo4j.version>
+    <neo4j.version>5.14.0</neo4j.version>
     <!-- We define the dozerdb-core.version here because we want to keep the main project version the same as the parent neo4j project version. -->
-    <dozerdb-core.version>5.13.0-1.0.0-SNAPSHOT</dozerdb-core.version>
+    <dozerdb-core.version>5.14.0-1.0.0-SNAPSHOT</dozerdb-core.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <java.version>17</java.version>
     <maven.compiler.source>17</maven.compiler.source>

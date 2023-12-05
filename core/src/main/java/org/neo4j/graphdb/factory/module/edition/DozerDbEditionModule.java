@@ -103,6 +103,7 @@ import org.neo4j.kernel.lifecycle.LifecycleAdapter;
 import org.neo4j.logging.InternalLogProvider;
 import org.neo4j.logging.internal.LogService;
 import org.neo4j.procedure.builtin.BuiltInDbmsProcedures.UpgradeAllowedChecker.UpgradeAlwaysAllowed;
+import org.neo4j.procedure.impl.ProcedureConfig;
 import org.neo4j.router.CommunityQueryRouterBoostrap;
 import org.neo4j.server.CommunityNeoWebServer;
 import org.neo4j.server.config.AuthConfigProvider;
@@ -319,6 +320,11 @@ public class DozerDbEditionModule extends AbstractEditionModule implements Defau
                 () -> true,
                 defaultDatabaseResolver,
                 databaseReferenceRepo);
+    }
+
+    @Override
+    public ProcedureConfig getProcedureConfig(Config config) {
+        return new ProcedureConfig(config, false);
     }
 
     @Override

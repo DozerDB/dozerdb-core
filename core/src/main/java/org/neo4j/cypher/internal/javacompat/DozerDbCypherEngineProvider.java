@@ -35,6 +35,7 @@ import org.neo4j.cypher.internal.LastCommittedTxIdProvider;
 import org.neo4j.cypher.internal.cache.CacheFactory;
 import org.neo4j.cypher.internal.cache.CacheSize;
 import org.neo4j.cypher.internal.cache.CaffeineCacheFactory;
+import org.neo4j.cypher.internal.cache.CombinedQueryCacheStatistics;
 import org.neo4j.cypher.internal.cache.CypherQueryCaches;
 import org.neo4j.cypher.internal.cache.ExecutorBasedCaffeineCacheFactory;
 import org.neo4j.cypher.internal.compiler.CypherPlannerConfiguration;
@@ -43,12 +44,14 @@ import org.neo4j.cypher.internal.config.ObservableSetting;
 import org.neo4j.cypher.internal.runtime.CypherRuntimeConfiguration;
 import org.neo4j.function.Observable;
 import org.neo4j.kernel.impl.query.Neo4jTransactionalContextFactory;
+import org.neo4j.kernel.impl.query.QueryCacheStatistics;
 import org.neo4j.kernel.impl.query.QueryEngineProvider;
 import org.neo4j.kernel.impl.query.QueryExecutionEngine;
 import org.neo4j.kernel.internal.GraphDatabaseAPI;
 import org.neo4j.scheduler.Group;
 
 public class DozerDbCypherEngineProvider extends QueryEngineProvider {
+
     @Override
     protected int enginePriority() {
         return 1; // Lower means better. The enterprise version will have a lower number
@@ -90,13 +93,22 @@ public class DozerDbCypherEngineProvider extends QueryEngineProvider {
                 makeCypherQueryCaches(spi, queryService, cypherConfig, cacheSize, cacheFactory, clock);
         CompilerFactory compilerFactory =
                 makeCompilerFactory(queryService, spi, plannerConfig, runtimeConfig, queryCaches);
-        deps.satisfyDependency(queryCaches.statistics());
 
+        QueryCacheStatistics cacheStatistics = queryCaches.statistics();
+        if (!isSystemDatabase) {
+            deps.satisfyDependency(cacheStatistics);
+        }
         if (isSystemDatabase) {
             CypherPlannerConfiguration innerPlannerConfig =
                     CypherPlannerConfiguration.fromCypherConfiguration(cypherConfig, spi.config(), false);
             CypherQueryCaches innerQueryCaches =
                     makeCypherQueryCaches(spi, queryService, cypherConfig, cacheSize, cacheFactory, clock);
+
+            QueryCacheStatistics innerCacheStatistics = innerQueryCaches.statistics();
+            CombinedQueryCacheStatistics combinedCacheStatistics =
+                    new CombinedQueryCacheStatistics(cacheStatistics, innerCacheStatistics);
+            deps.satisfyDependency(combinedCacheStatistics);
+
             CompilerFactory innerCompilerFactory =
                     makeCompilerFactory(queryService, spi, innerPlannerConfig, runtimeConfig, innerQueryCaches);
             return new SystemExecutionEngine(
