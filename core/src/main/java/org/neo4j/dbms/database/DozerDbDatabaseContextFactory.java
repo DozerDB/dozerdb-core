@@ -115,7 +115,7 @@ public class DozerDbDatabaseContextFactory
                     ModularDatabaseCreationContext.defaultFileWatcherFilter(),
                     AccessCapabilityFactory.configDependent(),
                     ExternalIdReuseConditionProvider.NONE,
-                    idContextFactory.createIdContext(namedDatabaseId, contextFactory, databaseConfig),
+                    idContextFactory.createIdContext(namedDatabaseId, contextFactory, databaseConfig, true),
                     commitProcessFactory,
                     createTokenHolderProvider(this::kernel),
                     new GlobalAvailabilityGuardController(globalModule.getGlobalAvailabilityGuard()),
