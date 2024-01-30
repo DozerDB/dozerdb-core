@@ -32,6 +32,7 @@ import org.neo4j.cypher.internal.options.CypherRuntimeOption
 import org.neo4j.cypher.internal.options.CypherUpdateStrategy
 import org.neo4j.cypher.internal.planning.CypherPlanner
 import org.neo4j.cypher.internal.runtime.CypherRuntimeConfiguration
+import org.neo4j.cypher.internal.util.InternalNotificationStats
 import org.neo4j.kernel.GraphDatabaseQueryService
 import org.neo4j.kernel.database.DatabaseReferenceRepository
 import org.neo4j.logging.InternalLog
@@ -72,7 +73,8 @@ class DozerDbCompilerFactory(
         queryCaches,
         cypherPlanner,
         cypherUpdateStrategy,
-        dependencies.resolveDependency(classOf[DatabaseReferenceRepository])
+        dependencies.resolveDependency(classOf[DatabaseReferenceRepository]),
+        dependencies.resolveDependency(classOf[InternalNotificationStats])
       )
 
     val runtime =
