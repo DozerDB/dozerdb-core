@@ -79,11 +79,11 @@ public class ConstraintChecker {
                     ConstraintDescriptor constraintDescriptor = it.next();
                     if (constraintDescriptor.enforcesPropertyExistence()) {
                         if (constraintDescriptor.schema().isSchemaDescriptorType(LabelSchemaDescriptor.class)) {
-                            nodeLabelSchemaDescriptors.add((LabelSchemaDescriptor) constraintDescriptor);
+                            nodeLabelSchemaDescriptors.add((LabelSchemaDescriptor) constraintDescriptor.schema());
                         }
 
                         if (constraintDescriptor.schema().isSchemaDescriptorType(RelationTypeSchemaDescriptor.class)) {
-                            relsLabelSchemaDescriptors.add((RelationTypeSchemaDescriptor) constraintDescriptor);
+                            relsLabelSchemaDescriptors.add((RelationTypeSchemaDescriptor) constraintDescriptor.schema());
                         }
                     }
                 }
