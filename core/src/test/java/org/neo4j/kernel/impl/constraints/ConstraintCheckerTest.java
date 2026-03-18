@@ -50,7 +50,8 @@ public class ConstraintCheckerTest {
         ConstraintDescriptor constraintDescriptor = mock(ConstraintDescriptor.class);
         when(constraintDescriptor.enforcesPropertyExistence()).thenReturn(false);
 
-        when(storageReaderMock.constraintsGetAll()).thenReturn(List.of(constraintDescriptor).iterator());
+        when(storageReaderMock.constraintsGetAll())
+                .thenReturn(List.of(constraintDescriptor).iterator());
 
         ConstraintChecker result = STORAGE_READER_CONSTRAINT_BUILDER.apply(storageReaderMock);
 
@@ -67,14 +68,16 @@ public class ConstraintCheckerTest {
         LabelSchemaDescriptor labelSchema = SchemaDescriptors.forLabel(labelId, propertyId);
         ConstraintDescriptor constraint = ConstraintDescriptorFactory.existsForSchema(labelSchema, false);
 
-        when(storageReaderMock.constraintsGetAll()).thenReturn(List.of(constraint).iterator());
+        when(storageReaderMock.constraintsGetAll())
+                .thenReturn(List.of(constraint).iterator());
 
         ConstraintChecker result = STORAGE_READER_CONSTRAINT_BUILDER.apply(storageReaderMock);
 
         assertThat(result).isNotSameAs(EMPTY_CHECKER);
         assertThat(result.getNodeLabelSchemaDescriptors()).hasSize(1);
         assertThat(result.getNodeLabelSchemaDescriptors().get(0).getLabelId()).isEqualTo(labelId);
-        assertThat(result.getNodeLabelSchemaDescriptors().get(0).getPropertyIds()).containsExactly(propertyId);
+        assertThat(result.getNodeLabelSchemaDescriptors().get(0).getPropertyIds())
+                .containsExactly(propertyId);
         assertThat(result.getRelationTypeSchemaDescriptors()).isEmpty();
         assertThat(result.getNodePropertyMap().containsKey(labelId)).isTrue();
         assertThat(result.getNodePropertyMap().get(labelId)).containsExactly(propertyId);
@@ -87,15 +90,18 @@ public class ConstraintCheckerTest {
         RelationTypeSchemaDescriptor relSchema = SchemaDescriptors.forRelType(relTypeId, propertyId);
         ConstraintDescriptor constraint = ConstraintDescriptorFactory.existsForSchema(relSchema, false);
 
-        when(storageReaderMock.constraintsGetAll()).thenReturn(List.of(constraint).iterator());
+        when(storageReaderMock.constraintsGetAll())
+                .thenReturn(List.of(constraint).iterator());
 
         ConstraintChecker result = STORAGE_READER_CONSTRAINT_BUILDER.apply(storageReaderMock);
 
         assertThat(result).isNotSameAs(EMPTY_CHECKER);
         assertThat(result.getNodeLabelSchemaDescriptors()).isEmpty();
         assertThat(result.getRelationTypeSchemaDescriptors()).hasSize(1);
-        assertThat(result.getRelationTypeSchemaDescriptors().get(0).getRelTypeId()).isEqualTo(relTypeId);
-        assertThat(result.getRelationTypeSchemaDescriptors().get(0).getPropertyIds()).containsExactly(propertyId);
+        assertThat(result.getRelationTypeSchemaDescriptors().get(0).getRelTypeId())
+                .isEqualTo(relTypeId);
+        assertThat(result.getRelationTypeSchemaDescriptors().get(0).getPropertyIds())
+                .containsExactly(propertyId);
         assertThat(result.getRelPropertyMap().containsKey(relTypeId)).isTrue();
         assertThat(result.getRelPropertyMap().get(relTypeId)).containsExactly(propertyId);
     }

@@ -83,7 +83,8 @@ public class ConstraintChecker {
                         }
 
                         if (constraintDescriptor.schema().isSchemaDescriptorType(RelationTypeSchemaDescriptor.class)) {
-                            relsLabelSchemaDescriptors.add((RelationTypeSchemaDescriptor) constraintDescriptor.schema());
+                            relsLabelSchemaDescriptors.add(
+                                    (RelationTypeSchemaDescriptor) constraintDescriptor.schema());
                         }
                     }
                 }
